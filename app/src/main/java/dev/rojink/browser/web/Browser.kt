@@ -119,11 +119,13 @@ class Browser(
         }
     }
 
+    fun canScan(tab: BrowserTab): Boolean = visible && attached && selected === tab
+
     fun setVisible(value: Boolean) {
         if (visible == value) return
         visible = value
         if (value) selected.view?.onResume() else selected.view?.onPause()
-        features.foreground(selected, value)
+        features.foreground(selected, value && attached)
     }
 
     fun apply(settings: BrowserSettings) {

@@ -11,6 +11,10 @@ import androidx.core.view.WindowInsetsControllerCompat
 import dev.rojink.browser.data.BrowserSettings
 import dev.rojink.browser.ui.BrowserUi
 import dev.rojink.browser.ui.RojInkTheme
+import dev.rojink.browser.ui.TranslateSheet
+import dev.rojink.browser.ui.TranslationBar
+import dev.rojink.browser.translation.PageTranslator
+import dev.rojink.browser.translation.ProviderFactory
 import dev.rojink.browser.web.Browser
 
 class MainActivity : ComponentActivity() {
@@ -20,6 +24,8 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         val app = application as RojInkApp
         browser = Browser(this, app.dao, app.library)
+        val translator = PageTranslator(this, browser, ProviderFactory(app.dao, app.keys))
+        browser.features = translator
         setContent {
             val settings by app.settings.values.collectAsState(BrowserSettings())
             LaunchedEffect(settings) { browser.apply(settings) }
@@ -31,7 +37,19 @@ class MainActivity : ComponentActivity() {
                     insets.hide(WindowInsetsCompat.Type.systemBars())
                 } else insets.show(WindowInsetsCompat.Type.systemBars())
             }
-            RojInkTheme(settings) { BrowserUi(browser, app, settings) }
+            RojInkTheme(settings) {
+                val tab = browser.selected
+                val status = translator.status(tab)
+                var prompt by remember(tab.id) { mutableStateOf(false) }
+                BrowserUi(browser, app, settings, onTranslate = { prompt = true }, clearTranslations = {
+                    translator.stopAll(); browser.dao.clearTranslations()
+                }) {
+                    if (status != null) TranslationBar(status, { translator.toggle(tab) }, { translator.stop(tab) })
+                }
+                if (prompt) TranslateSheet(settings, status = status, dismiss = { prompt = false },
+                    start = { options -> prompt = false; translator.start(tab, options) },
+                    stop = { prompt = false; translator.stop(tab) })
+            }
         }
     }
     override fun onResume() { super.onResume(); browser.setVisible(true) }

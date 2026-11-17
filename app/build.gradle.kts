@@ -73,5 +73,6 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.jsoup)
     testImplementation(libs.junit)
+    testImplementation("org.json:json:20250107")
     testImplementation(libs.okhttp.mockwebserver)
 }
