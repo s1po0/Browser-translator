@@ -38,3 +38,22 @@ for i, (name, price) in enumerate([('Fresh mint tea','$3.50'),('Warm honey cake'
     d.text((88,y), name, font=font(35), anchor='lm', fill='#252d26')
     d.text((870,y), price, font=font(35), anchor='rm', fill='#252d26')
 im.save(DEST / 'menu.png', optimize=True)
+
+# Optionally reproduce the Japanese/Korean emulator fixtures. Fonts are used only to rasterize fixture text.
+if __name__ == '__main__':
+    from os import environ
+    target = DEST.parents[2] / 'androidTest/assets'
+    for code, lines in [('jp', ['こんにちは！', '山へ行こう。']), ('kr', ['안녕하세요!', '집에 가요.'])]:
+        face = environ.get(f'NOTO_{code.upper()}_FONT')
+        if not face:
+            continue
+        target.mkdir(parents=True, exist_ok=True)
+        board = Image.new('RGB', (880, 520), '#2c6055')
+        draw = ImageDraw.Draw(board)
+        typeface = ImageFont.truetype(face, 72)
+        for i, text in enumerate(lines):
+            x, y = 68 + i * 145, 45 + i * 226
+            draw.rounded_rectangle((x, y, x + 610, y + 180), radius=40, fill='#fffef8')
+            draw.polygon([(x + 196, y + 176), (x + 231, y + 211), (x + 259, y + 174)], fill='#fffef8')
+            draw.text((x + 305, y + 90), text, font=typeface, anchor='mm', fill='#101414')
+        board.save(target / f'{code}-comic.png', optimize=True)

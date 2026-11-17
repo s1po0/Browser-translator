@@ -105,7 +105,10 @@ private enum class Screen(val title: Int) {
     }
     LaunchedEffect(screen, video) { browser.setAttached(screen == Screen.Browser && video == null) }
     if (video != null) {
-        Box(Modifier.fillMaxSize().background(Color.Black)) { key(video) { NativeView(video, Modifier.fillMaxSize()) } }
+        Box(Modifier.fillMaxSize().background(Color.Black)) {
+            tab.view?.let { view -> key(tab.id, view) { NativeView(view, Modifier.fillMaxSize()) } }
+            key(video) { NativeView(video, Modifier.fillMaxSize().background(Color.Black)) }
+        }
         return
     }
     browser.imageMenu?.let { url ->
@@ -353,7 +356,7 @@ private fun Browser.backAsUnit() { back() }
         verticalArrangement = Arrangement.spacedBy(10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         items(browser.tabs, key = { it.id }) { tab ->
             val current = tab === browser.selected
-            val host = webUrl(tab.address)?.host.orEmpty()
+            val host = if (tab.incognito) "" else webUrl(tab.address)?.host.orEmpty()
             Surface(onClick = { onSelect(tab) }, shape = RoundedCornerShape(20.dp),
                 color = if (current) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
                 border = if (current) androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary) else null) {
@@ -363,7 +366,7 @@ private fun Browser.backAsUnit() { back() }
                             style = MaterialTheme.typography.headlineMedium, modifier = Modifier.weight(1f))
                         IconButton(onClick = { browser.close(tab) }) { Icon(Icons.Default.Close, tr(R.string.close)) }
                     }
-                    Text(tab.title.ifBlank { if (tab.incognito) tr(R.string.private_tab) else tr(R.string.new_tab) }, maxLines = 2,
+                    Text(if (tab.incognito) tr(R.string.private_tab) else tab.title.ifBlank { tr(R.string.new_tab) }, maxLines = 2,
                         overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium)
                     if (host.isNotBlank()) Text(host, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
                 }

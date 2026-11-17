@@ -1,6 +1,7 @@
 package dev.rojink.browser.translation
 
 import android.content.Context
+import android.app.ActivityManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
@@ -30,10 +31,23 @@ import java.net.UnknownHostException
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.coroutineContext
 
-private const val INPUT_LIMIT = 18 * 1024 * 1024
+private const val INPUT_LIMIT = 14 * 1024 * 1024
 private const val MAX_PIXELS = 4_100_000L
 private const val MAX_EDGE = 8200
-private val imageSlots = Semaphore(3)
+private val budgetLock = Any()
+private lateinit var sharedSlots: Semaphore
+private fun imageSlots(context: Context): Semaphore = synchronized(budgetLock) {
+    if (!::sharedSlots.isInitialized) {
+        val memory = context.getSystemService(ActivityManager::class.java)
+        val count = when {
+            memory == null || memory.isLowRamDevice || memory.memoryClass < 128 -> 1
+            memory.memoryClass < 256 -> 2
+            else -> 3
+        }
+        sharedSlots = Semaphore(count)
+    }
+    sharedSlots
+}
 
 /** Native media loading isolates cookies from cross-site requests, including redirects. */
 private class MediaLoader(private val context: Context) {
@@ -48,14 +62,13 @@ private class MediaLoader(private val context: Context) {
         if (url.host == "rojink.invalid") return demo(url)
         var target: HttpUrl = url
         repeat(6) {
+            if (work.referer.isHttps && !target.isHttps) return work.fallback()
             val firstParty = sameSite(target, work.referer)
             val request = Request.Builder().url(target).header("User-Agent", work.userAgent)
                 .header("Accept", "image/webp,image/png,image/jpeg,image/gif,image/*;q=.8,*/*;q=.5")
-            if (!(work.referer.isHttps && !target.isHttps)) {
-                val ref = if (target.origin() == work.referer.origin()) work.referer.newBuilder().fragment(null).build().toString()
-                    else work.referer.origin() + "/"
-                request.header("Referer", ref)
-            }
+            val ref = if (target.origin() == work.referer.origin()) work.referer.newBuilder().fragment(null).build().toString()
+                else work.referer.origin() + "/"
+            request.header("Referer", ref)
             if (firstParty) work.cookies?.getCookie(target.toString())?.takeIf { it.isNotEmpty() }?.let { request.header("Cookie", it) }
             val result = try {
                 (if (firstParty) base else public).exchange(request.build()) { response ->
@@ -87,18 +100,19 @@ private class MediaLoader(private val context: Context) {
 private fun InetAddress.isPublicMediaAddress(): Boolean {
     if (isAnyLocalAddress || isLoopbackAddress || isLinkLocalAddress || isSiteLocalAddress || isMulticastAddress) return false
     val b = address.map { it.toInt() and 0xff }
-    if (b.size == 4) return b[0] !in setOf(0, 127, 198, 224, 255) && !(b[0] == 100 && b[1] in 64..127)
+    if (b.size == 4) return b[0] in 1..223 && !(b[0] == 100 && b[1] in 64..127) && !(b[0] == 198 && b[1] in 18..19)
     return b.size == 16 && b[0] and 0xfe != 0xfc && b[0] and 0xe0 == 0x20
 }
 
 internal class ImagePipeline(private val context: Context) : PageImageProcessor, AutoCloseable {
+    private val slots = imageSlots(context)
     private val onDevice = MlKitOcrProvider()
     private val loader = MediaLoader(context)
     private val renderer = ImageRenderer(context)
     private val cache = ImageCache(File(context.cacheDir, "translated-images"))
 
     override suspend fun process(info: ImageWork, options: ReaderOptions, providers: ReaderProviders, privateTab: Boolean): RenderedImage? =
-        imageSlots.withPermit {
+        slots.withPermit {
             val input = loader.load(info) ?: return@withPermit null
             translate(input, options, providers, info.candidate.lang, save = !privateTab)
         }
@@ -110,7 +124,7 @@ internal class ImagePipeline(private val context: Context) : PageImageProcessor,
 
     suspend fun preview(bytes: ByteArray): Bitmap = withContext(Dispatchers.Default) { decode(bytes) }
 
-    suspend fun gallery(input: ByteArray, options: ReaderOptions, providers: ReaderProviders, incognito: Boolean): Bitmap? = imageSlots.withPermit {
+    suspend fun gallery(input: ByteArray, options: ReaderOptions, providers: ReaderProviders, incognito: Boolean): Bitmap? = slots.withPermit {
         val rendered = translate(input, options, providers, "", !incognito) ?: return@withPermit null
         withContext(Dispatchers.Default) { rendered.stream().use { BitmapFactory.decodeStream(it) } ?: throw IOException("Could not decode output") }
     }

@@ -41,6 +41,19 @@ class GoogleTranslateTest {
         }
     }
 
+    @Test fun `a long free-provider request keeps text out of the query string`() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setBody("""[[["سڵاو","source"]],null,"en"]"""))
+            val provider = GoogleTranslateProvider(null, OkHttpClient(), server.url("/gtx"), server.url("/cloud"))
+            val source = "Hello from Android. ".repeat(112)
+            assertEquals(listOf("سڵاو"), provider.translate(listOf(source), "auto", "ckb"))
+            val request = server.takeRequest()
+            assertEquals("POST", request.method)
+            assertNull(request.requestUrl!!.queryParameter("q"))
+            assertTrue(request.body.readUtf8().startsWith("q=Hello"))
+        }
+    }
+
     @Test fun `unofficial endpoint requests Sorani without a key`() = runBlocking {
         MockWebServer().use { server ->
             server.enqueue(MockResponse().setBody("""[[["سڵاو","Hello"]],null,"en"]"""))

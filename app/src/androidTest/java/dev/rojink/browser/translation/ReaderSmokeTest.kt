@@ -115,7 +115,7 @@ class ReaderSmokeTest {
     }
 
     private class Harness(val browser: Browser, val translation: PageTranslator, val images: ImagePipeline, val provider: SampleProvider, val web: WebView) {
-        fun main(action: () -> Unit) { InstrumentationRegistry.getInstrumentation().runOnMainSync(action) }
+        fun main(action: () -> Unit) { InstrumentationRegistry.getInstrumentation().runOnMainSync { action() } }
         fun eval(script: String): String {
             val result = AtomicReference<String>()
             val ready = CountDownLatch(1)

@@ -1,6 +1,7 @@
 package dev.rojink.browser
 
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -54,7 +55,10 @@ class MainActivity : ComponentActivity() {
             }
             RojInkTheme(settings) {
                 val lightBars = MaterialTheme.colorScheme.background.luminance() > .5f
+                val protectPreview = browser.selected.incognito || (gallery.active && gallery.privateGallery)
                 SideEffect {
+                    if (protectPreview) window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                    else window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
                     val bars = WindowCompat.getInsetsController(window, window.decorView)
                     bars.isAppearanceLightStatusBars = lightBars
                     bars.isAppearanceLightNavigationBars = lightBars

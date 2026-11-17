@@ -104,9 +104,9 @@ class GoogleTranslateProvider internal constructor(
             else url(base).post(FormBody.Builder().add("q", text).build())
         }.build()
         return try { parseGtx(send(request)) } catch (e: HttpFailure) {
-            if (request.method != "POST" || e.status !in listOf(400, 405, 413, 414) || text.length <= 240) throw e
+            if (request.method != "POST" || e.status !in listOf(400, 405, 413, 414) || text.length <= 140) throw e
             // Some gtx deployments reject POST. Use short UTF-8-safe GETs in that case.
-            splitLong(text, 230).map { part -> freeOne(part, source, target) }.joinToString(" ")
+            splitLong(text, 140).map { part -> freeOne(part, source, target) }.joinToString(" ")
         }
     }
 
@@ -156,7 +156,7 @@ private val formattingMarks = Regex("[\\u200E\\u200F\\u061C\\u2066-\\u2069]")
 internal fun splitMarked(rendered: String, salt: String, size: Int): List<String>? {
     val clean = rendered.replace(formattingMarks, "")
     val matches = marker.findAll(clean).toList()
-    if (matches.size != size || clean.substring(0, matches.first().range.first).isNotBlank()) return null
+    if (matches.isEmpty() || matches.size != size || clean.substring(0, matches.first().range.first).isNotBlank()) return null
     return matches.mapIndexed { index, match ->
         val digits = match.groupValues[1].map { it.digitToIntOrNull() ?: return null }.joinToString("")
         if (digits != "$salt${index.toString().padStart(2, '0')}") return null

@@ -413,7 +413,11 @@ class Browser(
     private inner class Navigation(private val tab: BrowserTab) : WebViewClient() {
         override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
             val target = request.url.toString()
-            if (webUrl(target) != null) return false
+            val address = webUrl(target)
+            if (address != null) {
+                if (request.isForMainFrame && address.toString().substringBefore('#') != tab.address.substringBefore('#')) invalidate(tab)
+                return false
+            }
             // Websites cannot start a native component without a tap; no arbitrary intent:// extras.
             if (request.isForMainFrame && request.hasGesture() && request.url.scheme in setOf("mailto", "tel", "sms")) {
                 if (runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, request.url)) }.isFailure) notice = R.string.no_app

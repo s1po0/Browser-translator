@@ -13,7 +13,6 @@ import android.text.TextPaint
 import androidx.core.content.res.ResourcesCompat
 import dev.rojink.browser.R
 import kotlin.math.max
-import kotlin.math.min
 import kotlin.math.roundToInt
 
 private val rtlTargets = setOf("ckb", "ar", "fa", "ps", "ur", "iw", "he", "yi", "sd", "ug", "dv", "ks", "bal", "fa-AF", "pa-Arab", "ms-Arab", "bm-Nkoo")
@@ -29,7 +28,7 @@ internal class ImageRenderer(private val context: Context) {
         units.zip(translated).forEachIndexed { index, (unit, value) ->
             if (value.isBlank() || value.trim() == unit.text.trim()) return@forEachIndexed
             val original = unit.box.clip(bitmap.width, bitmap.height)
-            if (original.width < 5 || original.height < 5) return@forEachIndexed
+            if (original.width < 5 || original.height < 5 || protected.any { it.overlaps(original) }) return@forEachIndexed
             val avoid = protected + units.mapIndexedNotNull { i, other -> other.box.takeIf { i != index } }
             val margin = (unit.sizeHint * .29f).roundToInt().coerceIn(2, 18)
             val roomy = original.expand(if (unit.vertical) margin * 2 else margin, margin).clip(bitmap.width, bitmap.height)
@@ -39,13 +38,14 @@ internal class ImageRenderer(private val context: Context) {
                 typeface = if (target in naskhTargets) naskh else Typeface.create("sans-serif", Typeface.NORMAL)
             }
             val layout = fitted(value.trim(), paint, drawBox, unit.sizeHint, rtl) ?: return@forEachIndexed
+            if (unit.lines.any { line -> avoid.any { it.overlaps(line) } }) return@forEachIndexed
             val tones = unit.lines.map { line ->
-                val box = line.expand(2, 2).clip(bitmap.width, bitmap.height)
+                val padded = line.expand(2, 2).clip(bitmap.width, bitmap.height)
+                val box = if (avoid.any { padded.overlaps(it) }) line.clip(bitmap.width, bitmap.height) else padded
                 box to borderTone(bitmap, box)
             }
             val (background, noisy) = borderTone(bitmap, original)
             for ((box, tone) in tones) {
-                if (avoid.any { box.overlaps(it) }) continue
                 canvas.drawRect(box.left.toFloat(), box.top.toFloat(), box.right.toFloat(), box.bottom.toFloat(), Paint().apply { color = tone.first })
             }
             canvas.save()
