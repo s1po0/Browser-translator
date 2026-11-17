@@ -12,6 +12,11 @@ on:
 permissions:
   contents: read
 
+# An explicit push request lets the owner sign builds on the working branch even
+# before the workflow is on the default branch. Regular pushes stay debug only.
+env:
+  SIGN_APK: ${{ (github.event_name == 'workflow_dispatch' && inputs.signed_release) || (github.event_name == 'push' && github.repository == 's1po0/Browser-translator' && github.ref == 'refs/heads/arena/1fef4dd4-browser-translator' && contains(github.event.head_commit.message, '[signed-apk]')) }}
+
 jobs:
   apk:
     runs-on: ubuntu-latest
@@ -39,13 +44,16 @@ jobs:
           npm test --prefix tools/browser-tests
       - name: Test and assemble debug APK
         run: tools/ci-gradle.sh :app:testDebugUnitTest :app:assembleDebug
-      - uses: actions/upload-artifact@v6
+      - name: Stage debug APK
+        run: install -D -m 0644 app/build/outputs/apk/debug/app-debug.apk build/apk/translating-browser-debug.apk
+      - uses: actions/upload-artifact@v7.0.2
+        id: debug_apk
         with:
-          name: translating-browser-debug.apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: build/apk/translating-browser-debug.apk
+          archive: false
           if-no-files-found: error
       - name: Assemble and verify signed release
-        if: github.event_name == 'workflow_dispatch' && inputs.signed_release
+        if: env.SIGN_APK == 'true'
         shell: bash
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -62,14 +70,33 @@ jobs:
           export ANDROID_KEYSTORE_FILE
           ANDROID_KEYSTORE_FILE="$(mktemp --suffix=.keystore "$RUNNER_TEMP/rojink.XXXXXX")"
           trap 'rm -f "$ANDROID_KEYSTORE_FILE"' EXIT
-          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$ANDROID_KEYSTORE_FILE"
+          if ! printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$ANDROID_KEYSTORE_FILE"; then
+            echo '::error::ANDROID_KEYSTORE_BASE64 must contain only the complete Base64 keystore value.'
+            exit 1
+          fi
           unset ANDROID_KEYSTORE_BASE64
           releaseVersion=$((GITHUB_RUN_NUMBER + 1))
-          ./gradlew --no-daemon -ProjinkVersionCode="$releaseVersion" :app:assembleRelease
+          tools/ci-gradle.sh -ProjinkVersionCode="$releaseVersion" :app:assembleRelease
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs app/build/outputs/apk/release/app-release.apk
-      - uses: actions/upload-artifact@v6
-        if: github.event_name == 'workflow_dispatch' && inputs.signed_release
+          install -D -m 0644 app/build/outputs/apk/release/app-release.apk build/apk/rojink-signed-release.apk
+      - uses: actions/upload-artifact@v7.0.2
+        id: signed_apk
+        if: env.SIGN_APK == 'true'
         with:
-          name: rojink-signed-release.apk
-          path: app/build/outputs/apk/release/app-release.apk
+          path: build/apk/rojink-signed-release.apk
+          archive: false
           if-no-files-found: error
+      - name: APK download links
+        if: ${{ !cancelled() && steps.debug_apk.outputs.artifact-url != '' }}
+        env:
+          DEBUG_URL: ${{ steps.debug_apk.outputs.artifact-url }}
+          SIGNED_URL: ${{ steps.signed_apk.outputs.artifact-url }}
+        run: |
+          {
+            printf '### Install on Android 8.0 or later\n\n'
+            if [[ -n "$SIGNED_URL" ]]; then
+              printf -- '- [Download signed RojInk APK](%s)\n' "$SIGNED_URL"
+            fi
+            printf -- '- [Download debug APK](%s)\n' "$DEBUG_URL"
+            printf '\nSign in to GitHub, download the APK and open it directly on Android.\n'
+          } >> "$GITHUB_STEP_SUMMARY"
