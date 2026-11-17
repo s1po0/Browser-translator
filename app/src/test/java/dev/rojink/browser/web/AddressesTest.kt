@@ -8,6 +8,8 @@ class AddressesTest {
         assertEquals(AddressInput.Link("https://example.org/chapter-1"), addressInput(" example.org/chapter-1 "))
         assertEquals(AddressInput.Query("read manga"), addressInput("read manga"))
         assertEquals(AddressInput.Query("١.٢"), addressInput("١.٢"))
+        assertEquals(AddressInput.Link("https://127.0.0.1/"), addressInput("127.0.0.1"))
+        assertTrue(addressInput("例子.中国") is AddressInput.Link)
         assertNull(addressInput("file:///etc/passwd"))
         assertNull(addressInput("https://user:password@example.org"))
         assertNull(addressInput("javascript:alert(1)"))

@@ -2,6 +2,7 @@ package dev.rojink.browser.web
 
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import java.net.IDN
 
 private val scheme = Regex("^[a-z][a-z0-9+.-]*://", RegexOption.IGNORE_CASE)
 
@@ -13,9 +14,13 @@ fun resolveLink(input: String): String? {
     val host = text.substringBefore('/').substringBefore('?').substringBefore('#').substringBefore(':')
     if ('.' !in host && !host.equals("localhost", ignoreCase = true) && !text.startsWith('[')) return null
     return webUrl("https://$text")?.takeIf { url ->
-        val tld = url.host.substringAfterLast('.')
-        url.host == "localhost" || ':' in url.host || url.host.count { it == '.' } == 3 && url.host.all { it.isDigit() || it == '.' } ||
-            ('.' in url.host && (tld.startsWith("xn--") || tld.length >= 2 && tld.all(Char::isLetter)))
+        val labels = url.host.trimEnd('.').split('.')
+        val tld = IDN.toUnicode(labels.last())
+        val ipv4 = labels.size == 4 && labels.all { part ->
+            part.all { it in '0'..'9' } && part.toIntOrNull()?.let { it in 0..255 } == true
+        }
+        url.host == "localhost" || ':' in url.host || ipv4 ||
+            (labels.size >= 2 && tld.length >= 2 && tld.all(Char::isLetter))
     }?.toString()
 }
 

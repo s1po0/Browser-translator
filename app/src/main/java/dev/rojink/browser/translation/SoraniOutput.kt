@@ -59,8 +59,7 @@ internal fun polishSorani(value: String): String {
     val lower = value.trim().trimEnd('.', '!', '?').lowercase(Locale.ROOT)
     val knownOnly = !mixed && (lower in names || lower in readingTerms ||
         parts.size == 1 && labelShape.matches(value.trim()) && parts.single().lowercase(Locale.ROOT) in readingTerms)
-    // An English sentence left intact by a provider is not a Sorani translation. Keep it readable.
-    if (!mixed && !shortName && !knownOnly) return value
+    // If the provider left a full English phrase, handle recognizable names only; don't mangle the prose.
     fun convert(section: String): String {
         val phrases = phrase.replace(section) { names[it.value.lowercase(Locale.ROOT)] ?: it.value }
         return latinWord.replace(phrases) { match ->
@@ -68,9 +67,9 @@ internal fun polishSorani(value: String): String {
             val word = original.lowercase(Locale.ROOT).replace('’', '\'').replace('–', '-')
             when {
                 word in acronyms || word.length <= 1 -> original
-                word in names -> names.getValue(word)
-                word in readingTerms -> readingTerms.getValue(word)
-                likelyName(original) -> phoneticWord(word)
+                word in names && (mixed || knownOnly || likelyName(original)) -> names.getValue(word)
+                word in readingTerms && (mixed || knownOnly) -> readingTerms.getValue(word)
+                (mixed || shortName) && likelyName(original) -> phoneticWord(word)
                 else -> original
             }
         }
