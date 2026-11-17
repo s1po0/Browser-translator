@@ -1,0 +1,7 @@
+{
+  "name": "rojink-browser-dom-tests",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "node --test reader.test.mjs" },
+  "devDependencies": { "jsdom": "26.1.0" }
+}

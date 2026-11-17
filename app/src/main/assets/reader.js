@@ -41,6 +41,8 @@
       if (!cleaned || !/\p{L}/u.test(cleaned) || cleaned.length > 10000) continue;
       const el = node.parentElement;
       if (!el || el.closest(SKIP) || !near(el.getBoundingClientRect(), v, 180) || !visible(el)) continue;
+      const range = document.createRange(); range.selectNodeContents(node);
+      if (!near(range.getBoundingClientRect(), v, 180)) continue;
       const previous = nodes.get(node);
       if (previous && (previous.raw === raw || previous.paint === raw)) continue;
       if (previous) textState.delete(previous.id);
@@ -164,7 +166,12 @@
       else if (r.saved.bg) el.style.setProperty('background-image', r.saved.bg, r.saved.priority);
       else el.style.removeProperty('background-image');
     } else {
-      if (show && r.overlay && !r.overlay.isConnected) { el.after(r.overlay); el.style.visibility = 'hidden'; }
+      if (show && r.overlay && !r.overlay.isConnected) {
+        const rect = el.getBoundingClientRect();
+        r.overlay.style.left = `${rect.left + window.scrollX}px`; r.overlay.style.top = `${rect.top + window.scrollY}px`;
+        r.overlay.style.width = `${rect.width}px`; r.overlay.style.height = `${rect.height}px`;
+        document.body.appendChild(r.overlay); el.style.visibility = 'hidden';
+      }
       if (!show) { r.overlay?.remove(); el.style.visibility = r.saved.visibility; }
     }
   }
@@ -180,11 +187,10 @@
     };
     if (r.kind === 'bg') r.saved = { bg: el.style.getPropertyValue('background-image'), priority: el.style.getPropertyPriority('background-image') };
     if (r.kind === 'canvas') {
-      const rect = el.getBoundingClientRect();
       r.saved = { visibility: el.style.visibility };
       const overlay = document.createElement('img');
       overlay.alt = ''; overlay.src = out; overlay.className = 'rojink-canvas-translation';
-      overlay.style.cssText = `position:absolute;width:${rect.width}px;height:${rect.height}px;transform:translateX(-100%);z-index:1;`;
+      overlay.style.cssText = 'position:absolute;z-index:1;margin:0;max-width:none;object-fit:fill;';
       r.overlay = overlay; mediaNodes.set(overlay, r);
     }
     r.out = out; r.applied = true;
@@ -221,8 +227,8 @@
     holdTimer = setTimeout(() => { if (pointer) { held = r; render(r, false); } }, 420);
   }
   function move(e) { if (pointer?.id === e.pointerId && Math.hypot(e.clientX-pointer.x, e.clientY-pointer.y) > 16) release(); }
-  function context(e) { if (hit(e.target)) e.preventDefault(); }
-  const events = [['pointerdown', down], ['pointermove', move], ['pointerup', release], ['pointercancel', release], ['contextmenu', context]];
+  function context(e) { if (!original && hit(e.target)) e.preventDefault(); }
+  const events = [['pointerdown', down], ['pointermove', move], ['pointerup', release], ['pointercancel', release], ['blur', release], ['contextmenu', context]];
   for (const [evt, fn] of events) window.addEventListener(evt, fn, true);
   window[key] = {
     take(wantImages, wantText) {

@@ -85,7 +85,7 @@ internal class ProviderFactory(private val dao: BrowserDao, private val keys: Ke
 class PageTranslator internal constructor(
     private val context: Context,
     private val browser: Browser,
-    private val factory: ProviderFactory,
+    private val providersFor: suspend (Boolean, Boolean) -> ReaderProviders,
     private val processImage: PageImageProcessor? = null,
 ) : DocumentFeatures {
     private val states = mutableStateMapOf<String, PageStatus>()
@@ -109,7 +109,7 @@ class PageTranslator internal constructor(
         state.busyText = options.text
         state.job = browser.scope.launch {
             try {
-                val providers = factory.get(tab.incognito, options.useVision)
+                val providers = providersFor(tab.incognito, options.images && options.useVision)
                 val flags = JSONObject().put("text", options.text).put("images", options.images && processImage != null)
                 val injection = "$script(${JSONObject.quote(key)},$flags)"
                 if (eval(tab, state, web, injection) != "true") throw ResponseFailure()

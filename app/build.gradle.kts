@@ -14,6 +14,7 @@ android {
         applicationId = "dev.rojink.browser"
         minSdk = 26
         targetSdk = 37
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         versionCode = providers.gradleProperty("rojinkVersionCode").orNull?.toInt() ?: 1
         versionName = "1.0.0"
     }
@@ -72,6 +73,8 @@ dependencies {
     implementation(libs.mlkit.devanagari)
     implementation(libs.okhttp)
     implementation(libs.jsoup)
+    androidTestImplementation("androidx.test.ext:junit:1.3.0")
+    androidTestImplementation("androidx.test:runner:1.7.0")
     testImplementation(libs.junit)
     testImplementation("org.json:json:20250107")
     testImplementation(libs.okhttp.mockwebserver)

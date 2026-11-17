@@ -28,7 +28,7 @@ class MainActivity : ComponentActivity() {
         browser = Browser(this, app.dao, app.library)
         images = ImagePipeline(applicationContext)
         val providers = ProviderFactory(app.dao, app.keys)
-        val translator = PageTranslator(this, browser, providers, images)
+        val translator = PageTranslator(this, browser, providers::get, images)
         browser.features = translator
         setContent {
             val settings by app.settings.values.collectAsState(BrowserSettings())
