@@ -128,4 +128,5 @@
     <string name="hold_original">دەست بە درێژایی لەسەر وێنەی وەرگێڕدراو ڕابگرە بۆ بینینی ڕەسەنەکە.</string>
     <string name="zoom_in">گەورەکردن</string>
     <string name="zoom_out">بچووککردن</string>
+    <string name="save_original_image">پاشەکەوتکردنی وێنەی ڕەسەن</string>
 </resources>

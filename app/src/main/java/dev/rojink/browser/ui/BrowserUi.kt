@@ -33,6 +33,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -107,6 +108,12 @@ private enum class Screen(val title: Int) {
         Box(Modifier.fillMaxSize().background(Color.Black)) { key(video) { NativeView(video, Modifier.fillMaxSize()) } }
         return
     }
+    browser.imageMenu?.let { url ->
+        AlertDialog(onDismissRequest = browser::dismissImageMenu, title = { Text(tr(R.string.save_original_image)) },
+            text = { Text(webUrl(url)?.host.orEmpty()) },
+            confirmButton = { TextButton(onClick = { browser.dismissImageMenu(); browser.saveImage(url) }) { Text(tr(R.string.save)) } },
+            dismissButton = { TextButton(onClick = browser::dismissImageMenu) { Text(tr(R.string.cancel)) } })
+    }
     Scaffold(containerColor = MaterialTheme.colorScheme.background, snackbarHost = { SnackbarHost(snackbar) }) { inset ->
         if (screen == Screen.Browser) {
             val focus = remember { FocusRequester() }
@@ -118,8 +125,9 @@ private enum class Screen(val title: Int) {
                         Image(painterResource(R.drawable.ic_rojink), null, Modifier.size(32.dp))
                         Spacer(Modifier.width(8.dp))
                         Text(tr(R.string.app_name), style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
-                        TextButton(onClick = { browser.safely { app.settings.update { it.copy(uiLanguage = if (settings.uiLanguage == "ckb") "en" else "ckb") } } }) {
-                            Text(if (IsSorani.current) "English" else "کوردی", style = MaterialTheme.typography.labelLarge)
+                        val sorani = IsSorani.current
+                        TextButton(onClick = { browser.safely { app.settings.update { it.copy(uiLanguage = if (sorani) "en" else "ckb") } } }) {
+                            Text(if (sorani) "English" else "کوردی", style = MaterialTheme.typography.labelLarge)
                         }
                     }
                 }
@@ -202,7 +210,12 @@ private enum class Screen(val title: Int) {
         textStyle = MaterialTheme.typography.bodyMedium.copy(textDirection = TextDirection.Ltr),
         placeholder = { Text(tr(R.string.address), maxLines = 1, overflow = TextOverflow.Ellipsis) },
         leadingIcon = { Icon(Icons.Default.Search, null, tint = MaterialTheme.colorScheme.primary) },
-        trailingIcon = if (focused && query.isNotBlank()) { { IconButton(onClick = { query = "" }) { Icon(Icons.Default.Close, tr(R.string.clear)) } } } else null,
+        trailingIcon = if (focused && query.isNotBlank()) { {
+            Row {
+                if (query != tab.address) IconButton(onClick = { submit(query) }) { Icon(Icons.AutoMirrored.Filled.ArrowForward, tr(R.string.go)) }
+                IconButton(onClick = { query = "" }) { Icon(Icons.Default.Close, tr(R.string.clear)) }
+            }
+        } } else null,
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Go),
         keyboardActions = KeyboardActions(onGo = { submit(query) }))
 }
@@ -253,7 +266,7 @@ private fun Browser.backAsUnit() { back() }
             item {
                 Surface(shape = RoundedCornerShape(28.dp), color = Ink) {
                     BoxWithConstraints(Modifier.fillMaxWidth()) {
-                        BookArt(Modifier.align(Alignment.TopEnd).size((maxWidth * .49f).coerceAtMost(210.dp)).padding(6.dp))
+                        BookArt(Modifier.align(Alignment.TopEnd).size((maxWidth * .43f).coerceAtMost(195.dp)).padding(6.dp).alpha(.56f))
                         Column(Modifier.fillMaxWidth().padding(22.dp), verticalArrangement = Arrangement.spacedBy(11.dp)) {
                             Surface(color = Color(0xFF295B48), shape = RoundedCornerShape(50)) {
                                 Text(tr(R.string.manga_badge), Modifier.padding(horizontal = 9.dp, vertical = 4.dp), color = Lime, style = MaterialTheme.typography.labelSmall)

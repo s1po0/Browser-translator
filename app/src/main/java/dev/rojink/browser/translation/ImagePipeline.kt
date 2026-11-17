@@ -38,9 +38,10 @@ private val imageSlots = Semaphore(3)
 /** Native media loading isolates cookies from cross-site requests, including redirects. */
 private class MediaLoader(private val context: Context) {
     private val base = privateClient.newBuilder().callTimeout(17, TimeUnit.SECONDS).build()
-    private val public = base.newBuilder().dns { name ->
-        Dns.SYSTEM.lookup(name).filter(InetAddress::isPublicMediaAddress).ifEmpty { throw UnknownHostException(name) }
-    }.build()
+    private val public = base.newBuilder().dns(object : Dns {
+        override fun lookup(hostname: String): List<InetAddress> =
+            Dns.SYSTEM.lookup(hostname).filter(InetAddress::isPublicMediaAddress).ifEmpty { throw UnknownHostException(hostname) }
+    }).build()
 
     suspend fun load(work: ImageWork): ByteArray? {
         val url = webUrl(work.candidate.url) ?: return work.fallback()
@@ -169,7 +170,7 @@ internal class ImagePipeline(private val context: Context) : PageImageProcessor,
         }, true)
         if (raw !== transformed) raw.recycle()
         if (transformed.isMutable) return transformed
-        return transformed.copy(Bitmap.Config.ARGB_8888, true).also { transformed.recycle() }
+        return try { transformed.copy(Bitmap.Config.ARGB_8888, true) ?: throw IOException("Could not rotate image") } finally { transformed.recycle() }
     }
 }
 

@@ -18,15 +18,15 @@ import dev.rojink.browser.translation.PageStatus
 import dev.rojink.browser.translation.ReaderOptions
 
 @OptIn(ExperimentalMaterial3Api::class)
-@Composable internal fun TranslateSheet(settings: BrowserSettings, gallery: Boolean = false, status: PageStatus? = null,
+@Composable internal fun TranslateSheet(settings: BrowserSettings, gallery: Boolean = false, status: PageStatus? = null, initial: ReaderOptions? = status?.options,
     dismiss: () -> Unit, start: (ReaderOptions) -> Unit, stop: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val languages = remember(context) { Languages(context) }
-    var target by remember { mutableStateOf(status?.options?.target ?: settings.target) }
-    var text by remember { mutableStateOf(!gallery && (status?.options?.text ?: settings.translateText)) }
-    var images by remember { mutableStateOf(gallery || (status?.options?.images ?: settings.translateImages)) }
-    var script by remember { mutableStateOf(status?.options?.script ?: settings.ocrHint) }
+    var target by remember { mutableStateOf(initial?.target ?: settings.target) }
+    var text by remember { mutableStateOf(!gallery && (initial?.text ?: settings.translateText)) }
+    var images by remember { mutableStateOf(gallery || (initial?.images ?: settings.translateImages)) }
+    var script by remember { mutableStateOf(initial?.script ?: settings.ocrHint) }
     val vision = settings.useVision
     var choose by remember { mutableStateOf(false) }
     var chooseScript by remember { mutableStateOf(false) }

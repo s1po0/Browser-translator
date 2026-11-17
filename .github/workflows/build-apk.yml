@@ -24,19 +24,21 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - uses: android-actions/setup-android@v3
+      - uses: android-actions/setup-android@v4
         with:
           packages: ''
           cmdline-tools-version: '15859902'
       - name: Install Android SDK 37
         run: sdkmanager 'platforms;android-37.0' 'build-tools;36.0.0'
       - uses: gradle/actions/setup-gradle@v5
+        with:
+          cache-read-only: false
       - name: Test document scanner and original restore
         run: |
           npm ci --prefix tools/browser-tests --ignore-scripts --no-audit --no-fund
           npm test --prefix tools/browser-tests
       - name: Test and assemble debug APK
-        run: ./gradlew --no-daemon :app:testDebugUnitTest :app:assembleDebug
+        run: tools/ci-gradle.sh :app:testDebugUnitTest :app:assembleDebug
       - uses: actions/upload-artifact@v6
         with:
           name: translating-browser-debug.apk
@@ -62,8 +64,8 @@ jobs:
           trap 'rm -f "$ANDROID_KEYSTORE_FILE"' EXIT
           printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$ANDROID_KEYSTORE_FILE"
           unset ANDROID_KEYSTORE_BASE64
-          debugVersion=$((GITHUB_RUN_NUMBER + 1))
-          ./gradlew --no-daemon -ProjinkVersionCode="$debugVersion" :app:assembleRelease
+          releaseVersion=$((GITHUB_RUN_NUMBER + 1))
+          ./gradlew --no-daemon -ProjinkVersionCode="$releaseVersion" :app:assembleRelease
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs app/build/outputs/apk/release/app-release.apk
       - uses: actions/upload-artifact@v6
         if: github.event_name == 'workflow_dispatch' && inputs.signed_release

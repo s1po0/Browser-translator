@@ -125,6 +125,8 @@ class PageTranslator internal constructor(
         tab.view?.evaluateJavascript(call(state, "show", state.original.toString()), null)
     }
 
+    override fun allowImageMenu(tab: BrowserTab) = states[tab.id]?.original != false
+
     override fun foreground(tab: BrowserTab, visible: Boolean) {
         states[tab.id]?.let { state ->
             state.active = visible

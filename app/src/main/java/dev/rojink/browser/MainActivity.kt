@@ -3,8 +3,13 @@ package dev.rojink.browser
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.*
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.graphics.luminance
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -15,6 +20,8 @@ import dev.rojink.browser.ui.TranslateSheet
 import dev.rojink.browser.ui.TranslationBar
 import dev.rojink.browser.translation.PageTranslator
 import dev.rojink.browser.translation.ImagePipeline
+import dev.rojink.browser.translation.GallerySession
+import dev.rojink.browser.ui.GalleryUi
 import dev.rojink.browser.translation.ProviderFactory
 import dev.rojink.browser.web.Browser
 
@@ -30,6 +37,7 @@ class MainActivity : ComponentActivity() {
         val providers = ProviderFactory(app.dao, app.keys)
         val translator = PageTranslator(this, browser, providers::get, images)
         browser.features = translator
+        val gallery = GallerySession(this, browser, images, providers)
         setContent {
             val settings by app.settings.values.collectAsState(BrowserSettings())
             LaunchedEffect(settings) { browser.apply(settings) }
@@ -41,12 +49,26 @@ class MainActivity : ComponentActivity() {
                     insets.hide(WindowInsetsCompat.Type.systemBars())
                 } else insets.show(WindowInsetsCompat.Type.systemBars())
             }
+            val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+                if (uri != null) gallery.select(uri, browser.selected.incognito)
+            }
             RojInkTheme(settings) {
+                val lightBars = MaterialTheme.colorScheme.background.luminance() > .5f
+                SideEffect {
+                    val bars = WindowCompat.getInsetsController(window, window.decorView)
+                    bars.isAppearanceLightStatusBars = lightBars
+                    bars.isAppearanceLightNavigationBars = lightBars
+                }
+                if (gallery.active) {
+                    GalleryUi(gallery, settings)
+                    return@RojInkTheme
+                }
                 val tab = browser.selected
                 val status = translator.status(tab)
                 var prompt by remember(tab.id) { mutableStateOf(false) }
-                BrowserUi(browser, app, settings, onTranslate = { prompt = true }, clearTranslations = {
-                    translator.stopAll(); browser.dao.clearTranslations(); images.clear()
+                BrowserUi(browser, app, settings, onTranslate = { prompt = true },
+                    onPhoto = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }, clearTranslations = {
+                    translator.stopAll(); browser.dao.clearTranslations(); images.clear(); gallery.clearShares()
                 }) {
                     if (status != null) TranslationBar(status, { translator.toggle(tab) }, { translator.stop(tab) })
                 }

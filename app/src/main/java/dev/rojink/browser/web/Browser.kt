@@ -86,6 +86,7 @@ interface DocumentFeatures {
     fun invalidate(tab: BrowserTab) {}
     fun foreground(tab: BrowserTab, visible: Boolean) {}
     fun closed(tab: BrowserTab) {}
+    fun allowImageMenu(tab: BrowserTab): Boolean = true
     fun intercept(tab: BrowserTab, request: WebResourceRequest): WebResourceResponse? = null
 }
 
@@ -100,6 +101,7 @@ class Browser(
         private set
     var fullScreen by mutableStateOf<View?>(null)
         private set
+    var imageMenu by mutableStateOf<String?>(null)
     var notice by mutableIntStateOf(0)
     var settings by mutableStateOf(BrowserSettings())
         private set
@@ -201,6 +203,17 @@ class Browser(
 
     fun forward() { selected.view?.takeIf { it.canGoForward() }?.let { invalidate(selected); it.goForward() } }
     fun reload(tab: BrowserTab = selected) { tab.view?.let { invalidate(tab); it.reload() } }
+    fun dismissImageMenu() { imageMenu = null }
+    fun saveImage(url: String) {
+        val tab = selected
+        if (tab.incognito) { notice = R.string.private_no_save; return }
+        val current = webUrl(url) ?: return
+        if (current.host == "rojink.invalid") { notice = R.string.download_error; return }
+        val ua = tab.view?.settings?.userAgentString ?: return
+        val page = tab.address
+        safely(R.string.download_error) { library.download(url, ua, page, null, null); notice = R.string.download_started }
+    }
+
     fun stopLoading() { selected.view?.stopLoading(); selected.progress = 100 }
 
     fun home() {
@@ -349,6 +362,14 @@ class Browser(
             web.webChromeClient = Chrome(tab)
             web.setFindListener { active, count, complete ->
                 if (complete && !tab.destroyed && tab.find) { tab.findMatches = count; tab.findIndex = if (count == 0) 0 else active + 1 }
+            }
+            web.setOnLongClickListener {
+                val hit = web.hitTestResult
+                val image = hit.extra?.takeIf { hit.type == WebView.HitTestResult.IMAGE_TYPE || hit.type == WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE }
+                if (tab === selected && !tab.incognito && features.allowImageMenu(tab) && webUrl(image) != null) {
+                    imageMenu = image
+                    true
+                } else false
             }
             web.setDownloadListener { url, ua, disposition, mime, _ ->
                 if (tab.incognito) notice = R.string.private_no_save
