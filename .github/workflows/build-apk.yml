@@ -1,0 +1,69 @@
+name: Build Android APK
+
+on:
+  push:
+  workflow_dispatch:
+    inputs:
+      signed_release:
+        description: Also build the signed release APK (requires repository secrets)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: ''
+          cmdline-tools-version: '15859902'
+      - name: Install Android SDK 37
+        run: sdkmanager 'platforms;android-37.0' 'build-tools;36.0.0'
+      - uses: gradle/actions/setup-gradle@v5
+      - name: Test and assemble debug APK
+        run: ./gradlew --no-daemon :app:testDebugUnitTest :app:assembleDebug
+      - uses: actions/upload-artifact@v6
+        with:
+          name: translating-browser-debug.apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+      - name: Assemble and verify signed release
+        if: github.event_name == 'workflow_dispatch' && inputs.signed_release
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          : "${ANDROID_KEYSTORE_BASE64:?Missing ANDROID_KEYSTORE_BASE64 repository secret}"
+          : "${ANDROID_STORE_PASSWORD:?Missing ANDROID_STORE_PASSWORD repository secret}"
+          : "${ANDROID_KEY_ALIAS:?Missing ANDROID_KEY_ALIAS repository secret}"
+          : "${ANDROID_KEY_PASSWORD:?Missing ANDROID_KEY_PASSWORD repository secret}"
+          umask 077
+          export ANDROID_KEYSTORE_FILE
+          ANDROID_KEYSTORE_FILE="$(mktemp --suffix=.keystore "$RUNNER_TEMP/rojink.XXXXXX")"
+          trap 'rm -f "$ANDROID_KEYSTORE_FILE"' EXIT
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$ANDROID_KEYSTORE_FILE"
+          unset ANDROID_KEYSTORE_BASE64
+          debugVersion=$((GITHUB_RUN_NUMBER + 1))
+          ./gradlew --no-daemon -ProjinkVersionCode="$debugVersion" :app:assembleRelease
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs app/build/outputs/apk/release/app-release.apk
+      - uses: actions/upload-artifact@v6
+        if: github.event_name == 'workflow_dispatch' && inputs.signed_release
+        with:
+          name: rojink-signed-release.apk
+          path: app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
