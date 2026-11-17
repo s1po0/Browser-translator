@@ -4,6 +4,9 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" tools:node="remove" />
     <application android:name=".RojInkApp" android:allowBackup="false" android:icon="@drawable/ic_rojink" android:label="@string/app_name"
         android:supportsRtl="true" android:usesCleartextTraffic="true" android:theme="@style/Theme.RojInk">
+        <service android:name="com.google.android.datatransport.runtime.backends.TransportBackendDiscovery" android:exported="false">
+            <meta-data android:name="backend:com.google.android.datatransport.cct.CctBackendFactory" tools:node="remove" />
+        </service>
         <provider android:name="androidx.core.content.FileProvider" android:authorities="${applicationId}.files"
             android:exported="false" android:grantUriPermissions="true">
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/share_paths" />

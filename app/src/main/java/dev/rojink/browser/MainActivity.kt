@@ -14,17 +14,21 @@ import dev.rojink.browser.ui.RojInkTheme
 import dev.rojink.browser.ui.TranslateSheet
 import dev.rojink.browser.ui.TranslationBar
 import dev.rojink.browser.translation.PageTranslator
+import dev.rojink.browser.translation.ImagePipeline
 import dev.rojink.browser.translation.ProviderFactory
 import dev.rojink.browser.web.Browser
 
 class MainActivity : ComponentActivity() {
     private lateinit var browser: Browser
+    private lateinit var images: ImagePipeline
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         val app = application as RojInkApp
         browser = Browser(this, app.dao, app.library)
-        val translator = PageTranslator(this, browser, ProviderFactory(app.dao, app.keys))
+        images = ImagePipeline(applicationContext)
+        val providers = ProviderFactory(app.dao, app.keys)
+        val translator = PageTranslator(this, browser, providers, images)
         browser.features = translator
         setContent {
             val settings by app.settings.values.collectAsState(BrowserSettings())
@@ -42,7 +46,7 @@ class MainActivity : ComponentActivity() {
                 val status = translator.status(tab)
                 var prompt by remember(tab.id) { mutableStateOf(false) }
                 BrowserUi(browser, app, settings, onTranslate = { prompt = true }, clearTranslations = {
-                    translator.stopAll(); browser.dao.clearTranslations()
+                    translator.stopAll(); browser.dao.clearTranslations(); images.clear()
                 }) {
                     if (status != null) TranslationBar(status, { translator.toggle(tab) }, { translator.stop(tab) })
                 }
@@ -54,5 +58,5 @@ class MainActivity : ComponentActivity() {
     }
     override fun onResume() { super.onResume(); browser.setVisible(true) }
     override fun onPause() { browser.setVisible(false); super.onPause() }
-    override fun onDestroy() { browser.destroy(); super.onDestroy() }
+    override fun onDestroy() { browser.destroy(); images.close(); super.onDestroy() }
 }

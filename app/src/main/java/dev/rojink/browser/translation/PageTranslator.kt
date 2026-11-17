@@ -238,8 +238,10 @@ class PageTranslator internal constructor(
                         if (candidate.url.isNotEmpty() && image !is RenderedImage.Memory && imageResults.size < 850) imageResults[candidate.url] = image
                         if (image != null && current(tab, state)) {
                             val path = "/.__rojink/${state.key.substringAfterLast('_')}/${candidate.id}.png"
-                            putRoute(tab, path, Route(tab.id, state.origin, image))
-                            if (eval(tab, state, web, call(state, "picture", "${candidate.id},${JSONObject.quote(state.origin + path)}")) != "true") {
+                            val sourceOrigin = webUrl(candidate.url)?.origin()
+                            val localOrigin = if (sourceOrigin == null || sourceOrigin == state.origin) state.origin else "https://rojink.invalid"
+                            putRoute(tab, path, Route(tab.id, localOrigin, image))
+                            if (eval(tab, state, web, call(state, "picture", "${candidate.id},${JSONObject.quote(localOrigin + path)}")) != "true") {
                                 routes.remove(path)
                             }
                         }
