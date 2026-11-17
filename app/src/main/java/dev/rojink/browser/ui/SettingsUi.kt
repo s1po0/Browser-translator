@@ -44,7 +44,6 @@ import kotlin.math.roundToInt
     fun update(block: (BrowserSettings) -> BrowserSettings) { browser.safely { app.settings.update(block) } }
     val themes = listOf("system" to tr(R.string.system), "light" to tr(R.string.light), "dark" to tr(R.string.dark))
     val locales = listOf("system" to tr(R.string.system), "en" to "English", "ckb" to "کوردیی سۆرانی")
-    val engines = listOf("google" to "Google", "duckduckgo" to "DuckDuckGo", "bing" to "Bing")
     val scripts = ocrChoices()
     fun asName(list: List<Pair<String, String>>, current: String) = list.toMap()[current]
     LazyColumn(contentPadding = PaddingValues(vertical = 10.dp, horizontal = 14.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
@@ -59,14 +58,17 @@ import kotlin.math.roundToInt
             }
         }
         item { Section(R.string.browsing) }
-        item { SettingRow(R.string.search_engine, asName(engines, settings.engine)) { chooser = Choice(R.string.search_engine, engines, settings.engine) { value -> update { it.copy(engine = value) } } } }
+        item { SettingRow(R.string.clear_search_index, tr(R.string.clear_search_index_body)) {
+            confirm = R.string.clear_search_index to { browser.safely { browser.dao.clearSearchPages(); browser.notice = R.string.search_index_cleared } }
+        } }
         item { SettingSwitch(R.string.block_trackers, settings.trackerBlocking) { value -> update { it.copy(trackerBlocking = value) } } }
         item { SettingRow(R.string.import_bookmarks) { import.launch(arrayOf("text/html", "application/xhtml+xml", "text/plain", "application/octet-stream")) } }
-        item { SettingRow(R.string.export_bookmarks) { export.launch("rojink-bookmarks.html") } }
+        item { SettingRow(R.string.export_bookmarks) { export.launch("sipan-bookmarks.html") } }
         item { Section(R.string.translation_section) }
         item { SettingRow(R.string.target_language, languages[settings.target].nativeName) { languageDialog = true } }
         item { SettingSwitch(R.string.text_option, settings.translateText) { value -> update { it.copy(translateText = value) } } }
         item { SettingSwitch(R.string.images_option, settings.translateImages) { value -> update { it.copy(translateImages = value) } } }
+        item { SettingSwitch(R.string.enhanced_ocr, settings.enhancedOcr, supporting = tr(R.string.enhanced_ocr_detail)) { value -> update { it.copy(enhancedOcr = value) } } }
         item { SettingRow(R.string.ocr_script, asName(scripts, settings.ocrHint)) { chooser = Choice(R.string.ocr_script, scripts, settings.ocrHint) { value -> update { it.copy(ocrHint = value) } } } }
         item { SettingRow(R.string.cloud_key, tr(if (ApiKey.TRANSLATE in enabledKeys) R.string.cloud_provider else R.string.free_provider)) { keyDialog = ApiKey.TRANSLATE } }
         item { SettingRow(R.string.vision_key, if (ApiKey.VISION in enabledKeys) tr(R.string.key_saved) else null) { keyDialog = ApiKey.VISION } }

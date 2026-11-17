@@ -1,7 +1,6 @@
 package dev.rojink.browser.web
 
 import okhttp3.HttpUrl
-import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 private val scheme = Regex("^[a-z][a-z0-9+.-]*://", RegexOption.IGNORE_CASE)
@@ -13,20 +12,25 @@ fun resolveLink(input: String): String? {
     if (scheme.containsMatchIn(text)) return webUrl(text)?.toString()
     val host = text.substringBefore('/').substringBefore('?').substringBefore('#').substringBefore(':')
     if ('.' !in host && !host.equals("localhost", ignoreCase = true) && !text.startsWith('[')) return null
-    return webUrl("https://$text")?.toString()
+    return webUrl("https://$text")?.takeIf { url ->
+        val tld = url.host.substringAfterLast('.')
+        url.host == "localhost" || ':' in url.host || url.host.count { it == '.' } == 3 && url.host.all { it.isDigit() || it == '.' } ||
+            ('.' in url.host && (tld.startsWith("xn--") || tld.length >= 2 && tld.all(Char::isLetter)))
+    }?.toString()
 }
 
-fun resolveAddress(input: String, engine: String): String? {
+internal sealed interface AddressInput {
+    data class Link(val url: String) : AddressInput
+    data class Query(val text: String) : AddressInput
+}
+
+/** Queries never become web URLs. Only the search screen handles Query. */
+internal fun addressInput(input: String): AddressInput? {
     val text = input.trim()
-    if (text.isEmpty()) return null
-    if (scheme.containsMatchIn(text)) return webUrl(text)?.toString()
-    resolveLink(text)?.let { return it }
-    val base = when (engine) {
-        "duckduckgo" -> "https://duckduckgo.com/"
-        "bing" -> "https://www.bing.com/search"
-        else -> "https://www.google.com/search"
-    }
-    return base.toHttpUrl().newBuilder().addQueryParameter("q", text).build().toString()
+    if (text.isBlank()) return null
+    resolveLink(text)?.let { return AddressInput.Link(it) }
+    if (scheme.containsMatchIn(text) || text.startsWith("javascript:", true) || text.startsWith("data:", true) || text.startsWith("file:", true)) return null
+    return AddressInput.Query(text.take(300))
 }
 
 fun webUrl(value: String?): HttpUrl? = value?.toHttpUrlOrNull()?.takeIf { it.username.isEmpty() && it.password.isEmpty() }

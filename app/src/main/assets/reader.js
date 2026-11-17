@@ -1,4 +1,4 @@
-/* RojInk's document-local reader. Android pulls bounded snapshots only after a user gesture.
+/* Sipan's document-local reader. Android pulls bounded snapshots only after a user gesture.
    No JavaScriptInterface: frames and page scripts never get a callable native object. */
 (function (key, options) {
   'use strict';

@@ -18,8 +18,8 @@ internal data class Box(val left: Int, val top: Int, val right: Int, val bottom:
     fun overlaps(other: Box) = intersection(other) > 0
 }
 internal data class OcrWord(val text: String, val box: Box)
-internal data class OcrLine(val text: String, val box: Box, val words: List<OcrWord>, val block: Int, val vertical: Boolean = false)
-internal data class OcrPage(val lines: List<OcrLine>, val rightFirst: Boolean)
+internal data class OcrLine(val text: String, val box: Box, val words: List<OcrWord>, val block: Int, val vertical: Boolean = false, val confidence: Float = .70f)
+internal data class OcrPage(val lines: List<OcrLine>, val rightFirst: Boolean, val enhancedTiles: Int = 0)
 internal data class TextUnit(val text: String, val box: Box, val lines: List<Box>, val sizeHint: Int, val vertical: Boolean)
 internal data class ImageLayout(val units: List<TextUnit>, val protected: List<Box>)
 

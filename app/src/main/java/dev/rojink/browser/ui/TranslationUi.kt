@@ -30,6 +30,7 @@ import dev.rojink.browser.translation.ReaderOptions
     var text by remember { mutableStateOf(!gallery && (initial?.text ?: settings.translateText)) }
     var images by remember { mutableStateOf(gallery || (initial?.images ?: settings.translateImages)) }
     var script by remember { mutableStateOf(initial?.script ?: settings.ocrHint) }
+    var detail by remember { mutableStateOf(initial?.enhancedOcr ?: settings.enhancedOcr) }
     val vision = settings.useVision
     val scheme = MaterialTheme.colorScheme
     var choose by remember { mutableStateOf(false) }
@@ -62,7 +63,10 @@ import dev.rojink.browser.translation.ReaderOptions
                     SettingSwitch(R.string.images_option, images, supporting = tr(R.string.images_option_detail), modifier = Modifier.testTag("reader-translate-images")) { images = it }
                 }
             }
-            if (images && !vision) SettingRow(R.string.ocr_script, scripts.toMap()[script]) { chooseScript = true }
+            if (images && !vision) {
+                SettingRow(R.string.ocr_script, scripts.toMap()[script]) { chooseScript = true }
+                SettingSwitch(R.string.enhanced_ocr, detail) { detail = it }
+            }
             Surface(color = scheme.surfaceContainer, contentColor = scheme.onSurface, shape = RoundedCornerShape(14.dp)) {
                 Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(9.dp), verticalAlignment = Alignment.CenterVertically) {
                     ReaderGlyph(R.drawable.ic_reader_privacy, Modifier.size(19.dp), tint = scheme.primary)
@@ -70,7 +74,7 @@ import dev.rojink.browser.translation.ReaderOptions
                         Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
                 }
             }
-            Button(onClick = { start(ReaderOptions(target, text, images, script, vision)) }, enabled = text || images,
+            Button(onClick = { start(ReaderOptions(target, text, images, script, vision, detail)) }, enabled = text || images,
                 shape = RoundedCornerShape(15.dp), modifier = Modifier.fillMaxWidth().heightIn(min = 51.dp).testTag("reader-start-translation")) {
                 Text(tr(R.string.start))
             }

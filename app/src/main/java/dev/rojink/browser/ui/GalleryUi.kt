@@ -81,7 +81,7 @@ import dev.rojink.browser.translation.GallerySession
                         }
                     }
                     if (session.after != null && !session.privateGallery) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                        TextButton(onClick = { write.launch("rojink-translation.png") }) { Text(tr(R.string.save)) }
+                        TextButton(onClick = { write.launch("sipan-translation.png") }) { Text(tr(R.string.save)) }
                         TextButton(onClick = session::share) { Text(tr(R.string.share)) }
                     }
                 }

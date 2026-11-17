@@ -57,3 +57,11 @@ if __name__ == '__main__':
             draw.polygon([(x + 196, y + 176), (x + 231, y + 211), (x + 259, y + 174)], fill='#fffef8')
             draw.text((x + 305, y + 90), text, font=typeface, anchor='mm', fill='#101414')
         board.save(target / f'{code}-comic.png', optimize=True)
+
+        panel = Image.new('RGB', (780, 390), '#e3e8e3')
+        draw = ImageDraw.Draw(panel)
+        tiny = ImageFont.truetype(face, 15)
+        for x, y in ((200, 90), (515, 238)):
+            draw.rounded_rectangle((x-100, y-32, x+100, y+32), radius=25, fill='#f0f1ee')
+            draw.text((x, y), lines[0][:-1], font=tiny, anchor='mm', fill='#a6aaa5')
+        panel.save(target / f'{code}-small-faded.png', optimize=True)

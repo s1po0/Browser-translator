@@ -34,6 +34,7 @@ import dev.rojink.browser.R
 import dev.rojink.browser.data.BrowserDao
 import dev.rojink.browser.data.BrowserSettings
 import dev.rojink.browser.data.Visit
+import dev.rojink.browser.data.SearchPage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -41,6 +42,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import org.json.JSONObject
 import java.io.ByteArrayInputStream
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicInteger
@@ -173,7 +175,7 @@ class Browser(
     }
 
     fun navigate(input: String): Boolean {
-        val address = resolveAddress(input, settings.engine) ?: return false.also { notice = R.string.address_error }
+        val address = resolveLink(input) ?: return false.also { notice = R.string.address_error }
         val tab = selected
         val view = tab.view ?: try {
             makeView(tab)
@@ -255,6 +257,31 @@ class Browser(
         val url = webUrl(tab.address)?.toString() ?: return
         if (tab.incognito) { notice = R.string.private_no_save; return }
         safely { dao.putBookmarks(listOf(dev.rojink.browser.data.Bookmark(url, tab.title.ifBlank { url }))); notice = R.string.bookmark_saved }
+    }
+
+    fun indexCurrentPage() {
+        val tab = selected
+        if (tab.incognito) { notice = R.string.private_no_save; return }
+        val web = tab.view ?: return
+        val revision = tab.revision
+        val source = webUrl(tab.address)?.takeIf { it.query == null }?.newBuilder()?.fragment(null)?.build()
+        if (source == null || tab.progress != 100 || tab.failed) { notice = R.string.index_page_unavailable; return }
+        val script = runCatching { context.assets.open("index-page.js").bufferedReader().use { it.readText() } }.getOrNull()
+        if (script == null) { notice = R.string.operation_failed; return }
+        web.evaluateJavascript(script) { raw ->
+            if (tab.destroyed || tab.revision != revision || selected !== tab || tab.view !== web) return@evaluateJavascript
+            val data = raw?.takeIf { it.length <= 60_000 }?.let { runCatching { JSONObject(it) }.getOrNull() }
+            val page = webUrl(data?.optString("url"))?.newBuilder()?.fragment(null)?.build()
+            val title = data?.optString("title").orEmpty().trim().take(160).ifBlank { tab.title.take(160).ifBlank { source.host } }
+            val text = data?.optString("body").orEmpty().trim().take(6000)
+            if (page != source || text.isBlank()) { notice = R.string.index_page_unavailable; return@evaluateJavascript }
+            val summary = data?.optString("summary").orEmpty().trim().take(300).ifBlank { text.take(260) }
+            safely {
+                dao.putSearchPage(SearchPage(source.toString(), title, summary, text))
+                dao.trimSearchPages()
+                notice = R.string.index_page_added
+            }
+        }
     }
 
     fun openLink(external: Boolean) {

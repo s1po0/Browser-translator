@@ -56,6 +56,8 @@ import androidx.compose.ui.viewinterop.AndroidView
 import dev.rojink.browser.R
 import dev.rojink.browser.RojInkApp
 import dev.rojink.browser.data.BrowserSettings
+import dev.rojink.browser.web.AddressInput
+import dev.rojink.browser.web.addressInput
 import dev.rojink.browser.web.Browser
 import dev.rojink.browser.web.BrowserTab
 import dev.rojink.browser.web.resolveLink
@@ -63,7 +65,7 @@ import dev.rojink.browser.web.webUrl
 import kotlinx.coroutines.delay
 
 private enum class Screen(val title: Int) {
-    Browser(R.string.app_name), Tabs(R.string.tabs), Bookmarks(R.string.bookmarks), History(R.string.history),
+    Browser(R.string.app_name), Search(R.string.sipan_search), Tabs(R.string.tabs), Bookmarks(R.string.bookmarks), History(R.string.history),
     Downloads(R.string.downloads), Settings(R.string.settings), Privacy(R.string.privacy), About(R.string.about),
 }
 
@@ -90,6 +92,7 @@ private enum class Screen(val title: Int) {
         }
     }
     val tab = browser.selected
+    var searchQuery by remember(tab.id) { mutableStateOf("") }
     val video = browser.fullScreen
     fun finishScreen() {
         screen = if (screen == Screen.About || screen == Screen.Privacy) Screen.Settings else Screen.Browser
@@ -125,6 +128,19 @@ private enum class Screen(val title: Int) {
             fun navigate(input: String) {
                 if (browser.navigate(input)) { focusManager.clearFocus(); keyboard?.hide() }
             }
+            fun search(input: String) {
+                searchQuery = input
+                focusManager.clearFocus()
+                keyboard?.hide()
+                screen = Screen.Search
+            }
+            fun submit(input: String) {
+                when (val target = addressInput(input)) {
+                    is AddressInput.Link -> navigate(target.url)
+                    is AddressInput.Query -> search(target.text)
+                    null -> browser.notice = R.string.address_error
+                }
+            }
             fun pasteLink() {
                 // Never read the clipboard in the background or submit it as a search term.
                 val clip = runCatching { clipboard?.primaryClip }.getOrNull()
@@ -153,7 +169,7 @@ private enum class Screen(val title: Int) {
                             verticalAlignment = Alignment.CenterVertically) {
                             AddressField(tab, focus, Modifier.weight(1f), onReload = {
                                 if (tab.progress < 100) browser.stopLoading() else if (tab.view == null) navigate(tab.address) else browser.reload()
-                            }, submit = ::navigate)
+                            }, submit = ::submit)
                             if (!home) BrowserMenu(browser, { screen = it }, onPhoto)
                         }
                     }
@@ -169,7 +185,8 @@ private enum class Screen(val title: Int) {
                         }
                         view != null && tab.address.isNotEmpty() -> key(tab.id, view) { NativeView(view, Modifier.fillMaxSize()) }
                         else -> ReaderHome(tab, bookmarks, settings.target, onPaste = ::pasteLink, onPhoto = onPhoto,
-                            onDemo = { navigate("https://rojink.invalid/demo/") }, onSaved = { screen = Screen.Bookmarks }, onBookmark = ::navigate)
+                            onDemo = { navigate("https://rojink.invalid/demo/") }, onSaved = { screen = Screen.Bookmarks }, onBookmark = ::navigate,
+                            onSearch = ::search)
                     }
                 }
                 if (!imeOpen) {
@@ -178,9 +195,13 @@ private enum class Screen(val title: Int) {
                 }
             }
         } else {
-            Column(Modifier.fillMaxSize().padding(inset)) {
+            Column(Modifier.fillMaxSize().padding(inset).consumeWindowInsets(inset).imePadding()) {
                 ScreenHeader(screen.title, ::finishScreen)
                 when (screen) {
+                    Screen.Search -> key(tab.id) {
+                        SipanSearchScreen(browser.dao, searchQuery, tab.incognito, onSearch = { searchQuery = it },
+                            onOpen = { if (browser.navigate(it)) screen = Screen.Browser })
+                    }
                     Screen.Tabs -> TabGrid(browser, { browser.select(it); screen = Screen.Browser }) { privateTab -> if (browser.newTab(privateTab)) screen = Screen.Browser }
                     Screen.Bookmarks -> SavedPages(bookmarks.map { SavedPage(it.url, it.title) }, R.string.no_bookmarks, onOpen = { if (browser.navigate(it)) screen = Screen.Browser },
                         onRemove = { url -> browser.safely { browser.dao.removeBookmark(url) } })
@@ -209,12 +230,14 @@ private enum class Screen(val title: Int) {
             @Composable fun item(id: Int, enabled: Boolean = true, action: () -> Unit) {
                 DropdownMenuItem(text = { Text(tr(id)) }, enabled = enabled, onClick = { menu = false; action() })
             }
+            item(R.string.sipan_search) { open(Screen.Search) }
             item(R.string.new_tab) { browser.newTab() }
             item(R.string.private_tab) { browser.newTab(true) }
             if (tab.address.isNotEmpty()) {
                 HorizontalDivider(Modifier.padding(vertical = 5.dp))
                 item(R.string.home) { browser.home() }
                 item(R.string.bookmark, !tab.incognito) { browser.bookmark() }
+                if (!tab.incognito) item(R.string.index_page, tab.progress == 100 && !tab.failed && webUrl(tab.address)?.query == null) { browser.indexCurrentPage() }
                 item(R.string.find) { browser.find(true) }
                 item(if (tab.desktop) R.string.mobile else R.string.desktop) { browser.desktopMode() }
                 item(R.string.share) { browser.openLink(false) }
@@ -250,7 +273,10 @@ private enum class Screen(val title: Int) {
         trailingIcon = when {
             focused && query.isNotBlank() -> ({
                 Row {
-                    if (query != tab.address) IconButton(onClick = { submit(query) }) { Icon(Icons.AutoMirrored.Filled.ArrowForward, tr(R.string.go)) }
+                    if (query != tab.address) IconButton(onClick = { submit(query) }) {
+                        if (addressInput(query) is AddressInput.Query) Icon(Icons.Default.Search, tr(R.string.sipan_search))
+                        else Icon(Icons.AutoMirrored.Filled.ArrowForward, tr(R.string.go))
+                    }
                     IconButton(onClick = { query = "" }) { Icon(Icons.Default.Close, tr(R.string.clear)) }
                 }
             })
@@ -261,8 +287,8 @@ private enum class Screen(val title: Int) {
             })
             else -> null
         },
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Go),
-        keyboardActions = KeyboardActions(onGo = { submit(query) }))
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Search),
+        keyboardActions = KeyboardActions(onSearch = { submit(query) }))
 }
 
 @Composable private fun FindBar(browser: Browser, tab: BrowserTab) {

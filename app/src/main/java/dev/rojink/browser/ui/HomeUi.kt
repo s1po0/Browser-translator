@@ -39,7 +39,7 @@ import dev.rojink.browser.web.webUrl
 
 @Composable internal fun BrandMark(modifier: Modifier = Modifier) {
     Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
-        Image(painterResource(R.drawable.ic_rojink), null, Modifier.size(35.dp))
+        Image(painterResource(R.drawable.ic_sipan), null, Modifier.size(35.dp))
         Column {
             Text(tr(R.string.app_name), style = MaterialTheme.typography.titleLarge, maxLines = 1)
             Text(tr(R.string.home_kicker), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -57,6 +57,7 @@ import dev.rojink.browser.web.webUrl
     onDemo: () -> Unit,
     onSaved: () -> Unit,
     onBookmark: (String) -> Unit,
+    onSearch: (String) -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
@@ -81,6 +82,7 @@ import dev.rojink.browser.web.webUrl
                 }
             } else {
                 item { ReadingHero(target, onPaste) }
+                item { SearchStarter(onSearch) }
                 item { Text(tr(R.string.home_tools), Modifier.padding(start = 2.dp, top = 1.dp), style = MaterialTheme.typography.titleMedium) }
                 item {
                     Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(10.dp)) {

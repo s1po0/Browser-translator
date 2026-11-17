@@ -78,12 +78,12 @@ jobs:
           releaseVersion=$((GITHUB_RUN_NUMBER + 1))
           tools/ci-gradle.sh -ProjinkVersionCode="$releaseVersion" :app:assembleRelease
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs app/build/outputs/apk/release/app-release.apk
-          install -D -m 0644 app/build/outputs/apk/release/app-release.apk build/apk/rojink-signed-release.apk
+          install -D -m 0644 app/build/outputs/apk/release/app-release.apk build/apk/sipan-signed-release.apk
       - uses: actions/upload-artifact@v7.0.2
         id: signed_apk
         if: env.SIGN_APK == 'true'
         with:
-          path: build/apk/rojink-signed-release.apk
+          path: build/apk/sipan-signed-release.apk
           archive: false
           if-no-files-found: error
       - name: APK download links
@@ -95,7 +95,7 @@ jobs:
           {
             printf '### Install on Android 8.0 or later\n\n'
             if [[ -n "$SIGNED_URL" ]]; then
-              printf -- '- [Download signed RojInk APK](%s)\n' "$SIGNED_URL"
+              printf -- '- [Download signed Sipan APK](%s)\n' "$SIGNED_URL"
             fi
             printf -- '- [Download debug APK](%s)\n' "$DEBUG_URL"
             printf '\nSign in to GitHub, download the APK and open it directly on Android.\n'

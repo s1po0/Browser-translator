@@ -38,7 +38,7 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.coroutines.resume
 
-data class ReaderOptions(val target: String, val text: Boolean, val images: Boolean, val script: String, val useVision: Boolean)
+data class ReaderOptions(val target: String, val text: Boolean, val images: Boolean, val script: String, val useVision: Boolean, val enhancedOcr: Boolean = true)
 internal data class ReaderProviders(val translator: TranslationProvider, val variant: String, val visionKey: String?)
 internal data class WebImage(val id: Int, val url: String, val kind: String, val priority: Int, val lang: String)
 internal data class ImageWork(val candidate: WebImage, val referer: HttpUrl, val userAgent: String, val cookies: android.webkit.CookieManager?,
@@ -77,7 +77,8 @@ internal class ProviderFactory(private val dao: BrowserDao, private val keys: Ke
         val vision = if (wantVision) keys.read(ApiKey.VISION) else null
         val engine = if (cloud != null) "google-cloud-v2" else "google-gtx-v1"
         val provider = GoogleTranslateProvider(cloud)
-        return ReaderProviders(if (privateSession) provider else TextCache(dao, provider, engine), engine, vision)
+        val buffered = if (privateSession) provider else TextCache(dao, provider, engine)
+        return ReaderProviders(SoraniOutput(buffered), "$engine-sorani-v1", vision)
     }
 }
 

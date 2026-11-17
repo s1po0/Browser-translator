@@ -133,11 +133,11 @@ internal class ImagePipeline(private val context: Context) : PageImageProcessor,
     override fun close() { onDevice.close() }
 
     private suspend fun translate(input: ByteArray, options: ReaderOptions, providers: ReaderProviders, language: String, save: Boolean): RenderedImage? {
-        val hint = OcrHint(options.script, language)
+        val hint = OcrHint(options.script, language, options.enhancedOcr)
         val vision = providers.visionKey
         val key = if (save) withContext(Dispatchers.Default) {
             val langHint = if (options.script == "auto") language.lowercase().take(16) else "explicit"
-            sha256("rojink-image-v1:${sha256(input)}:${options.target}:${options.script}:$langHint:${providers.variant}:${vision != null}".toByteArray())
+            sha256("sipan-image-v2:${sha256(input)}:${options.target}:${options.script}:${options.enhancedOcr}:$langHint:${providers.variant}:${vision != null}".toByteArray())
         } else null
         if (key != null) cache.get(key)?.let { return it }
         val bitmap = withContext(Dispatchers.Default) { decode(input) }

@@ -7,5 +7,4 @@
     <style name="Theme.RojInk.Dark" parent="android:style/Theme.Material.NoActionBar">
         <item name="android:windowBackground">#101A16</item>
     </style>
-    <string name="app_name">RojInk</string>
 </resources>

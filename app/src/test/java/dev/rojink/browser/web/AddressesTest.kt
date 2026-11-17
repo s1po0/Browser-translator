@@ -4,11 +4,13 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class AddressesTest {
-    @Test fun `supports links and encodes search without loading non-web schemes`() {
-        assertEquals("https://example.org/chapter-1", resolveAddress(" example.org/chapter-1 ", "google"))
-        assertEquals("https://www.bing.com/search?q=read%20manga", resolveAddress("read manga", "bing"))
-        assertNull(resolveAddress("file:///etc/passwd", "google"))
-        assertNull(webUrl("https://user:password@example.org"))
+    @Test fun `web links are navigable and everything else is local or rejected`() {
+        assertEquals(AddressInput.Link("https://example.org/chapter-1"), addressInput(" example.org/chapter-1 "))
+        assertEquals(AddressInput.Query("read manga"), addressInput("read manga"))
+        assertEquals(AddressInput.Query("١.٢"), addressInput("١.٢"))
+        assertNull(addressInput("file:///etc/passwd"))
+        assertNull(addressInput("https://user:password@example.org"))
+        assertNull(addressInput("javascript:alert(1)"))
     }
 
     @Test fun `paste opens web links without sending clipboard text to a search engine`() {

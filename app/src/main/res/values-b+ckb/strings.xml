@@ -1,6 +1,6 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="address">لینک دابنێ یان بگەڕێ</string>
+    <string name="address">لینک دابنێ یان لە سیپان بگەڕێ</string>
     <string name="address_error">ناونیشانێکی دروستی وێب بنووسە.</string>
     <string name="go">بڕۆ</string>
     <string name="back">گەڕانەوە</string>
@@ -64,13 +64,12 @@
     <string name="dark">تاریک</string>
     <string name="theme">ڕووکار</string>
     <string name="zoom">قەبارەی دەقی وێب · %1$d%%</string>
-    <string name="search_engine">بزوێنەری گەڕان</string>
     <string name="browsing">گەڕان</string>
     <string name="block_trackers">بلۆککردنی بەدواداچووە باوەکان</string>
     <string name="privacy">تایبەتمەندی</string>
-    <string name="privacy_intro">بێ چوونەژوورەوە، بێ سێرڤەری ڕۆژئینک، بێ ڕیکلام.</string>
-    <string name="privacy_body">نیشانکراوەکان، مێژووی گەڕان و کاشی وەرگێڕان لەسەر ئەم ئامێرە دەمێنن. ماڵپەڕەکان و بزوێنەری گەڕان داواکاریی ئاسایی وەردەگرن. تا «دەستپێکردن» لێ نەدەیت وەرگێڕان دەست پێ ناکات. گووگڵ دەقی وەرگێڕان وەردەگرێت. لە ناسینەوەی نووسینی ناوخۆدا، وێنەکان لەسەر ئامێرەکەت دەمێنن؛ بە Cloud Vision ـی هەڵبژاردەیی، وێنەکەش بۆ گووگڵ دەنێردرێت.\n\nتابە تایبەتەکان کوکیی جیاکراوە بەکاردەهێنن، مێژوو و کاشی وەرگێڕان لەسەر دیسک هەڵناگرن و کاتێک دادەخرێن پڕۆفایلەکانیان دەسڕدرێنەوە. ئەمە چالاکییەکانت لە ماڵپەڕ، تۆڕ یان دابینکەری وەرگێڕان ناشارێتەوە.</string>
-    <string name="about">دەربارەی ڕۆژئینک</string>
+    <string name="privacy_intro">بێ چوونەژوورەوە، بێ سێرڤەری سیپان، بێ ڕیکلام.</string>
+    <string name="privacy_body">گەڕانی سیپان تەنها لەسەر ئامێرەکەت ئەنجام دەدرێت و وشەی گەڕان بۆ هیچ دابینکەرێک نانێرێت. ئەگەر پەڕەیەک بۆ گەڕان زیاد بکەیت، بەشێکی دەقەکە لەسەر ئامێر پاشەکەوت دەبێت. ماڵپەڕەکان کاتێک دەیکەیتەوە داواکاریی ئاسایی وەردەگرن.\n\nتەنها دوای «دەستپێکردنی وەرگێڕان»، دەق بۆ گووگڵ دەنێردرێت. بە OCR ـی ناوخۆ، پیکسڵی وێنە لەسەر ئامێر دەمێنێتەوە. ئەگەر Cloud Vision چالاک بکەیت، وێنەش بۆ گووگڵ دەنێردرێت.\n\nتابی تایبەت کوکیی جیاواز بەکاردەهێنێت و هیچ مێژوو یان ئیندێکسی کەسی پاشەکەوت ناکات. ماڵپەڕ و تۆڕەکەت هێشتا دەتوانن چالاکییەکانت ببینن.</string>
+    <string name="about">دەربارەی سیپان</string>
     <string name="about_body">وێبگەڕێک بۆ خوێنەرانی مانگا، مانهوا، مێنیو و وێب بە زمانی خۆیان.\n\nبزوێنەری وێب: Android System WebView\nوەرگێڕان: Google Translate\nناسینەوەی نووسین لەسەر ئامێر: Google ML Kit\nفۆنت: Noto Naskh Arabic (SIL OFL)</string>
     <string name="clear_cache">سڕینەوەی کاشی وێبگەڕ و وەرگێڕان</string>
     <string name="cache_cleared">کاشەکان سڕانەوە</string>
@@ -145,4 +144,26 @@
     <string name="applied_language">وەرگێڕان بۆ %1$s</string>
     <string name="translation_ready">بۆ وەرگێڕانی زیاتر سکرۆڵ بکە</string>
     <string name="translation_paused">وەرگێڕان وەستاوە</string>
+    <string name="app_name">سیپان</string>
+    <string name="sipan_search">گەڕانی سیپان</string>
+    <string name="search_hint">لە ئیندێکسی سیپان بگەڕێ</string>
+    <string name="search_scope">ئیندێکس و پەڕەکانی خۆت لەسەر ئامێر</string>
+    <string name="search_private_scope">تابی تایبەت · تەنها ئیندێکسی گشتی</string>
+    <string name="search_starter">وشەی گەڕان لەسەر ئامێر دەمێنێتەوە. ماڵپەڕی کوردی و خوێندنەوە بدۆزەوە.</string>
+    <string name="search_topic_manga">مانگا</string>
+    <string name="search_topic_sorani">سۆرانی</string>
+    <string name="search_topic_erbil">هەولێر</string>
+    <string name="search_count">%1$d ئەنجام</string>
+    <string name="search_empty">هیچ ئەنجامێک لەم ئیندێکسە نییە</string>
+    <string name="search_empty_detail">بە وشەی کەمتر تاقی بکەرەوە. سیپان لە ئیندێکسی خۆی دەگەڕێت، نەک هەموو وێب.</string>
+    <string name="search_source_index">ئیندێکسی سیپان</string>
+    <string name="search_source_saved">پەڕەی زیادکراو</string>
+    <string name="index_page">زیادکردنی پەڕە بۆ گەڕانی سیپان</string>
+    <string name="index_page_added">پەڕە بۆ ئیندێکسی ناو ئامێر زیاد کرا</string>
+    <string name="index_page_unavailable">پەڕەکە زیاد نەکرا. پەڕەیەکی ئاسایی بە لینکی بێ پارامەتەر بکەرەوە.</string>
+    <string name="clear_search_index">سڕینەوەی پەڕە زیادکراوەکانی گەڕان</string>
+    <string name="clear_search_index_body">دەقی پەڕە زیادکراوەکان دەسڕێتەوە. مێژوو و نیشانەکان دەمێننەوە.</string>
+    <string name="search_index_cleared">پەڕە زیادکراوەکانی گەڕان سڕانەوە</string>
+    <string name="enhanced_ocr">OCR ـی بەهێزتر</string>
+    <string name="enhanced_ocr_detail">دەقی بچووک یان کاڵ دووبارە دەخوێنێتەوە. وێنەی دژوار کاتی زیاتر دەخایەنێت.</string>
 </resources>

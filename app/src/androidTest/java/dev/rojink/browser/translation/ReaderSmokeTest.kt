@@ -1,6 +1,7 @@
 package dev.rojink.browser.translation
 
 import android.os.SystemClock
+import android.graphics.BitmapFactory
 import android.webkit.WebView
 import android.widget.FrameLayout
 import androidx.test.core.app.ActivityScenario
@@ -10,6 +11,7 @@ import dev.rojink.browser.MainActivity
 import dev.rojink.browser.RojInkApp
 import dev.rojink.browser.web.Browser
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeout
 import org.json.JSONTokener
 import org.junit.Assert.*
@@ -86,6 +88,40 @@ class ReaderSmokeTest {
                 after!!.recycle()
             }
         }
+    }
+
+    @Test fun enhancedPassReadsFadedJapaneseAndKoreanLettering() = runBlocking {
+        withTimeout(100_000) {
+            MlKitOcrProvider().use { ocr ->
+                val samples = listOf(Triple("jp-small-faded.png", "ja", "こんにちは"), Triple("kr-small-faded.png", "ko", "안녕하세요"))
+                for ((asset, script, expected) in samples) {
+                    val image = instrumentation.context.assets.open(asset).use { BitmapFactory.decodeStream(it) }
+                    try {
+                        val baseline = ocr.recognize(image, OcrHint(script, "en", enhanced = false))
+                        val enhanced = ocr.recognize(image, OcrHint(script, "en", enhanced = true))
+                        fun hits(result: OcrPage) = result.lines.count { expected in it.text.filterNot(Char::isWhitespace) }
+                        println("$asset exact line matches: ${hits(baseline)} baseline, ${hits(enhanced)} enhanced (two reference lines)")
+                        assertEquals(0, baseline.enhancedTiles)
+                        assertTrue("Expected a detail retry for $script", enhanced.enhancedTiles > 0)
+                        assertTrue("Enhanced $script: ${enhanced.lines.map { it.text }} vs baseline ${baseline.lines.map { it.text }}",
+                            hits(enhanced) >= hits(baseline) && hits(enhanced) >= 1)
+                    } finally { image.recycle() }
+                }
+            }
+        }
+    }
+
+    @Test fun explicitlyIndexingAPageAddsItsBodyWithoutStartingTranslation() = withReader { reader ->
+        val dao = reader.browser.dao
+        runBlocking { dao.clearSearchPages() }
+        try {
+            assertTrue(runBlocking { dao.searchPages().first() }.isEmpty())
+            reader.main { reader.browser.indexCurrentPage() }
+            val page = runBlocking { withTimeout(9_000) { dao.searchPages().first { it.isNotEmpty() }.single() } }
+            assertTrue(page.title.contains("Sipan"))
+            assertTrue(page.body.contains("Beyond the hill"))
+            assertTrue(reader.provider.inputs.isEmpty())
+        } finally { runBlocking { dao.clearSearchPages() } }
     }
 
     private fun withReader(block: (Harness) -> Unit) {

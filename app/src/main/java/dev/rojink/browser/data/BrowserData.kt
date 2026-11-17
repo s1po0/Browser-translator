@@ -18,6 +18,8 @@ import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -33,6 +35,7 @@ import javax.crypto.spec.GCMParameterSpec
 @Entity data class Bookmark(@PrimaryKey val url: String, val title: String, val savedAt: Long = System.currentTimeMillis())
 @Entity data class Visit(@PrimaryKey val url: String, val title: String, val visitedAt: Long = System.currentTimeMillis())
 @Entity data class Download(@PrimaryKey val id: Long, val name: String, val addedAt: Long = System.currentTimeMillis())
+@Entity data class SearchPage(@PrimaryKey val url: String, val title: String, val summary: String, val body: String, val savedAt: Long = System.currentTimeMillis())
 @Entity data class CachedText(@PrimaryKey val key: String, val value: String, val createdAt: Long = System.currentTimeMillis())
 
 @Dao
@@ -47,17 +50,29 @@ interface BrowserDao {
     @Query("SELECT * FROM Download ORDER BY addedAt DESC") fun downloads(): Flow<List<Download>>
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putDownload(entry: Download)
     @Query("DELETE FROM Download WHERE id = :id") suspend fun removeDownload(id: Long)
+    @Query("SELECT * FROM SearchPage ORDER BY savedAt DESC LIMIT 150") fun searchPages(): Flow<List<SearchPage>>
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putSearchPage(entry: SearchPage)
+    @Query("DELETE FROM SearchPage WHERE url NOT IN (SELECT url FROM SearchPage ORDER BY savedAt DESC LIMIT 150)") suspend fun trimSearchPages()
+    @Query("DELETE FROM SearchPage") suspend fun clearSearchPages()
     @Query("SELECT * FROM CachedText WHERE `key` IN (:keys)") suspend fun cached(keys: List<String>): List<CachedText>
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putCached(entries: List<CachedText>)
     @Query("DELETE FROM CachedText WHERE `key` NOT IN (SELECT `key` FROM CachedText ORDER BY createdAt DESC LIMIT 18000)") suspend fun trimCached()
     @Query("DELETE FROM CachedText") suspend fun clearTranslations()
 }
 
-@Database(entities = [Bookmark::class, Visit::class, Download::class, CachedText::class], version = 1)
+@Database(entities = [Bookmark::class, Visit::class, Download::class, CachedText::class, SearchPage::class], version = 2)
 abstract class BrowserDatabase : RoomDatabase() {
     abstract fun dao(): BrowserDao
     companion object {
-        fun create(context: Context) = Room.databaseBuilder(context, BrowserDatabase::class.java, "rojink-library.db").build()
+        private val searchablePages = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS `SearchPage` (`url` TEXT NOT NULL PRIMARY KEY, `title` TEXT NOT NULL, `summary` TEXT NOT NULL, `body` TEXT NOT NULL, `savedAt` INTEGER NOT NULL)")
+            }
+        }
+        fun create(context: Context) = create(context, "rojink-library.db")
+
+        internal fun create(context: Context, name: String) = Room.databaseBuilder(context, BrowserDatabase::class.java, name)
+            .addMigrations(searchablePages).build()
     }
 }
 
@@ -65,13 +80,13 @@ data class BrowserSettings(
     val target: String = "ckb",
     val theme: String = "system",
     val uiLanguage: String = "system",
-    val engine: String = "google",
     val textSize: Int = 100,
     val translateText: Boolean = true,
     val translateImages: Boolean = true,
     val trackerBlocking: Boolean = true,
     val useVision: Boolean = false,
     val ocrHint: String = "auto",
+    val enhancedOcr: Boolean = true,
 )
 
 private val Context.preferences by preferencesDataStore("rojink-settings")
@@ -79,38 +94,38 @@ private object Prefs {
     val target = stringPreferencesKey("target")
     val theme = stringPreferencesKey("theme")
     val ui = stringPreferencesKey("ui")
-    val engine = stringPreferencesKey("engine")
+    val oldEngine = stringPreferencesKey("engine")
     val size = intPreferencesKey("text_size")
     val text = booleanPreferencesKey("page_text")
     val images = booleanPreferencesKey("images")
     val block = booleanPreferencesKey("trackers")
     val vision = booleanPreferencesKey("use_vision")
     val hint = stringPreferencesKey("ocr_hint")
+    val enhanced = booleanPreferencesKey("enhanced_ocr")
 }
 
 class SettingsStore(context: Context) {
     private val store = context.applicationContext.preferences
-    val values = store.data.map { p ->
-        BrowserSettings(p[Prefs.target] ?: "ckb", p[Prefs.theme] ?: "system", p[Prefs.ui] ?: "system",
-            p[Prefs.engine] ?: "google", (p[Prefs.size] ?: 100).coerceIn(75, 175),
-            p[Prefs.text] ?: true, p[Prefs.images] ?: true, p[Prefs.block] ?: true,
-            p[Prefs.vision] ?: false, p[Prefs.hint] ?: "auto")
-    }
+    private fun decode(p: androidx.datastore.preferences.core.Preferences) = BrowserSettings(
+        target = p[Prefs.target] ?: "ckb", theme = p[Prefs.theme] ?: "system", uiLanguage = p[Prefs.ui] ?: "system",
+        textSize = (p[Prefs.size] ?: 100).coerceIn(75, 175), translateText = p[Prefs.text] ?: true,
+        translateImages = p[Prefs.images] ?: true, trackerBlocking = p[Prefs.block] ?: true,
+        useVision = p[Prefs.vision] ?: false, ocrHint = p[Prefs.hint] ?: "auto", enhancedOcr = p[Prefs.enhanced] ?: true,
+    )
+    val values = store.data.map(::decode)
     suspend fun update(transform: (BrowserSettings) -> BrowserSettings) = store.edit { p ->
-        val settings = transform(BrowserSettings(p[Prefs.target] ?: "ckb", p[Prefs.theme] ?: "system",
-            p[Prefs.ui] ?: "system", p[Prefs.engine] ?: "google", p[Prefs.size] ?: 100,
-            p[Prefs.text] ?: true, p[Prefs.images] ?: true, p[Prefs.block] ?: true,
-            p[Prefs.vision] ?: false, p[Prefs.hint] ?: "auto"))
+        val settings = transform(decode(p))
         p[Prefs.target] = settings.target
         p[Prefs.theme] = settings.theme
         p[Prefs.ui] = settings.uiLanguage
-        p[Prefs.engine] = settings.engine
+        p.remove(Prefs.oldEngine)
         p[Prefs.size] = settings.textSize.coerceIn(75, 175)
         p[Prefs.text] = settings.translateText
         p[Prefs.images] = settings.translateImages
         p[Prefs.block] = settings.trackerBlocking
         p[Prefs.vision] = settings.useVision
         p[Prefs.hint] = settings.ocrHint
+        p[Prefs.enhanced] = settings.enhancedOcr
     }
 }
 

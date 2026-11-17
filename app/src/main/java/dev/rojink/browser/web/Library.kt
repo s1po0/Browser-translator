@@ -74,7 +74,7 @@ class Library(private val context: Context, private val dao: BrowserDao) {
         requireNotNull(context.contentResolver.openOutputStream(uri, "wt")).bufferedWriter().use { out ->
             out.appendLine("<!DOCTYPE NETSCAPE-Bookmark-file-1>")
             out.appendLine("<META HTTP-EQUIV=\"Content-Type\" CONTENT=\"text/html; charset=UTF-8\">")
-            out.appendLine("<TITLE>RojInk Bookmarks</TITLE><H1>RojInk Bookmarks</H1><DL><p>")
+            out.appendLine("<TITLE>Sipan Bookmarks</TITLE><H1>Sipan Bookmarks</H1><DL><p>")
             entries.forEach { out.appendLine("<DT><A HREF=\"${escape(it.url)}\" ADD_DATE=\"${it.savedAt / 1000}\">${escape(it.title)}</A>") }
             out.appendLine("</DL><p>")
         }

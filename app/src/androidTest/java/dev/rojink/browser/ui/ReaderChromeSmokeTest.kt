@@ -18,6 +18,15 @@ import org.junit.runner.RunWith
 class ReaderChromeSmokeTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
 
+    @Test fun sipanSearchFindsTheBundledIndexFromTheAddressBar() {
+        val field = compose.onNodeWithTag("reader-address")
+        field.performTextInput("paddleocr")
+        field.performImeAction()
+        compose.waitUntil(8_000) { compose.onAllNodes(hasTestTag("sipan-results")).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("PaddleOCR · GitHub").assertIsDisplayed()
+        compose.onNodeWithTag("reader-translate").assertDoesNotExist()
+    }
+
     @Test fun soraniMirrorsChromeAndPasteOpensConsentSheet() {
         val store = (compose.activity.application as RojInkApp).settings
         val prefs = runBlocking { store.values.first() }
