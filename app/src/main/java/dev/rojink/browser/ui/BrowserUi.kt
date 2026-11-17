@@ -1,11 +1,11 @@
 package dev.rojink.browser.ui
 
 import android.app.DownloadManager
+import android.content.ClipboardManager
 import android.view.View
 import android.view.ViewGroup
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.Image
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -23,50 +23,44 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import dev.rojink.browser.R
 import dev.rojink.browser.RojInkApp
-import dev.rojink.browser.data.Bookmark
 import dev.rojink.browser.data.BrowserSettings
 import dev.rojink.browser.web.Browser
 import dev.rojink.browser.web.BrowserTab
+import dev.rojink.browser.web.resolveLink
 import dev.rojink.browser.web.webUrl
 import kotlinx.coroutines.delay
-import kotlin.math.cos
-import kotlin.math.sin
 
 private enum class Screen(val title: Int) {
     Browser(R.string.app_name), Tabs(R.string.tabs), Bookmarks(R.string.bookmarks), History(R.string.history),
@@ -80,10 +74,10 @@ private enum class Screen(val title: Int) {
     onTranslate: (() -> Unit)? = null,
     onPhoto: (() -> Unit)? = null,
     clearTranslations: suspend () -> Unit = { browser.dao.clearTranslations() },
+    translationActive: Boolean = false,
     translationBar: @Composable () -> Unit = {},
 ) {
     var screen by remember { mutableStateOf(Screen.Browser) }
-    var menu by remember { mutableStateOf(false) }
     val bookmarksFlow = remember(browser) { browser.dao.bookmarks() }
     val bookmarks by bookmarksFlow.collectAsState(emptyList())
     val snackbar = remember { SnackbarHostState() }
@@ -103,7 +97,10 @@ private enum class Screen(val title: Int) {
     BackHandler(enabled = video != null || screen != Screen.Browser || tab.find || tab.canBack) {
         if (video != null) browser.closeVideo() else if (screen != Screen.Browser) finishScreen() else browser.back()
     }
-    LaunchedEffect(screen, video) { browser.setAttached(screen == Screen.Browser && video == null) }
+    DisposableEffect(screen, video) {
+        browser.setAttached(screen == Screen.Browser && video == null)
+        onDispose { browser.setAttached(false) }
+    }
     if (video != null) {
         Box(Modifier.fillMaxSize().background(Color.Black)) {
             tab.view?.let { view -> key(tab.id, view) { NativeView(view, Modifier.fillMaxSize()) } }
@@ -122,43 +119,42 @@ private enum class Screen(val title: Int) {
             val focus = remember { FocusRequester() }
             val keyboard = LocalSoftwareKeyboardController.current
             val focusManager = LocalFocusManager.current
-            Column(Modifier.fillMaxSize().padding(inset)) {
-                if (tab.address.isEmpty()) {
-                    Row(Modifier.fillMaxWidth().padding(start = 18.dp, end = 14.dp, top = 8.dp, bottom = 9.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Image(painterResource(R.drawable.ic_rojink), null, Modifier.size(32.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text(tr(R.string.app_name), style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
-                        val sorani = IsSorani.current
-                        TextButton(onClick = { browser.safely { app.settings.update { it.copy(uiLanguage = if (sorani) "en" else "ckb") } } }) {
-                            Text(if (sorani) "English" else "کوردی", style = MaterialTheme.typography.labelLarge)
-                        }
-                    }
+            val clipboard = LocalContext.current.getSystemService(ClipboardManager::class.java)
+            val home = tab.address.isEmpty()
+            val imeOpen = WindowInsets.ime.getBottom(LocalDensity.current) > 0
+            fun navigate(input: String) {
+                if (browser.navigate(input)) { focusManager.clearFocus(); keyboard?.hide() }
+            }
+            fun pasteLink() {
+                // Never read the clipboard in the background or submit it as a search term.
+                val clip = runCatching { clipboard?.primaryClip }.getOrNull()
+                val link = clip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.text?.toString()?.let(::resolveLink)
+                if (link != null) navigate(link) else {
+                    browser.notice = R.string.paste_missing
+                    focus.requestFocus()
+                    keyboard?.show()
                 }
-                Row(Modifier.fillMaxWidth().padding(start = 14.dp, end = 4.dp, top = 2.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    AddressField(tab, focus, Modifier.weight(1f)) {
-                        if (browser.navigate(it)) { focusManager.clearFocus(); keyboard?.hide() }
-                    }
-                    Box {
-                        IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, tr(R.string.menu)) }
-                        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                            @Composable fun item(id: Int, enabled: Boolean = true, action: () -> Unit) {
-                                DropdownMenuItem(text = { Text(tr(id)) }, enabled = enabled, onClick = { menu = false; action() })
+            }
+            Column(Modifier.fillMaxSize().padding(inset).consumeWindowInsets(inset).imePadding()) {
+                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
+                    Column(Modifier.widthIn(max = 640.dp).fillMaxWidth()) {
+                        if (home) Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 5.dp, bottom = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically) {
+                            BrandMark(Modifier.weight(1f))
+                            val sorani = IsSorani.current
+                            FilledTonalButton(onClick = { browser.safely { app.settings.update { it.copy(uiLanguage = if (sorani) "en" else "ckb") } } },
+                                modifier = Modifier.testTag("reader-ui-language"), shape = RoundedCornerShape(50),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 5.dp)) {
+                                Text(if (sorani) "English" else "کوردی", style = MaterialTheme.typography.labelLarge, maxLines = 1)
                             }
-                            val hasPage = tab.address.isNotEmpty()
-                            item(R.string.new_tab) { browser.newTab() }
-                            item(R.string.private_tab) { browser.newTab(true) }
-                            item(R.string.home, hasPage) { browser.home() }
-                            item(if (tab.progress < 100) R.string.stop else R.string.reload, hasPage) { if (tab.progress < 100) browser.stopLoading() else browser.reload() }
-                            item(R.string.bookmark, hasPage && !tab.incognito) { browser.bookmark() }
-                            item(R.string.bookmarks) { screen = Screen.Bookmarks }
-                            item(R.string.history) { screen = Screen.History }
-                            item(R.string.downloads) { screen = Screen.Downloads }
-                            item(R.string.photo, onPhoto != null) { onPhoto?.invoke() }
-                            item(R.string.find, hasPage) { browser.find(true) }
-                            item(if (tab.desktop) R.string.mobile else R.string.desktop) { browser.desktopMode() }
-                            item(R.string.share, hasPage) { browser.openLink(false) }
-                            item(R.string.external, hasPage) { browser.openLink(true) }
-                            item(R.string.settings) { screen = Screen.Settings }
+                            BrowserMenu(browser, { screen = it }, onPhoto)
+                        }
+                        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = if (home) 16.dp else 4.dp, top = 3.dp, bottom = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically) {
+                            AddressField(tab, focus, Modifier.weight(1f), onReload = {
+                                if (tab.progress < 100) browser.stopLoading() else if (tab.view == null) navigate(tab.address) else browser.reload()
+                            }, submit = ::navigate)
+                            if (!home) BrowserMenu(browser, { screen = it }, onPhoto)
                         }
                     }
                 }
@@ -172,12 +168,14 @@ private enum class Screen(val title: Int) {
                             if (view == null) browser.navigate(tab.address) else browser.reload()
                         }
                         view != null && tab.address.isNotEmpty() -> key(tab.id, view) { NativeView(view, Modifier.fillMaxSize()) }
-                        else -> HomeContent(tab, bookmarks, onLink = { focus.requestFocus(); keyboard?.show() }, onPhoto = onPhoto,
-                            onDemo = { browser.navigate("https://rojink.invalid/demo/") }, onBookmark = { browser.navigate(it) })
+                        else -> ReaderHome(tab, bookmarks, settings.target, onPaste = ::pasteLink, onPhoto = onPhoto,
+                            onDemo = { navigate("https://rojink.invalid/demo/") }, onSaved = { screen = Screen.Bookmarks }, onBookmark = ::navigate)
                     }
                 }
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                Dock(browser, onTabs = { screen = Screen.Tabs }, onTranslate = onTranslate)
+                if (!imeOpen) {
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    Dock(browser, { screen = it }, onTranslate, translationActive)
+                }
             }
         } else {
             Column(Modifier.fillMaxSize().padding(inset)) {
@@ -202,23 +200,67 @@ private enum class Screen(val title: Int) {
     }
 }
 
-@Composable private fun AddressField(tab: BrowserTab, focus: FocusRequester, modifier: Modifier, submit: (String) -> Unit) {
+@Composable private fun BrowserMenu(browser: Browser, open: (Screen) -> Unit, onPhoto: (() -> Unit)?) {
+    var menu by remember { mutableStateOf(false) }
+    val tab = browser.selected
+    Box {
+        IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, tr(R.string.menu)) }
+        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+            @Composable fun item(id: Int, enabled: Boolean = true, action: () -> Unit) {
+                DropdownMenuItem(text = { Text(tr(id)) }, enabled = enabled, onClick = { menu = false; action() })
+            }
+            item(R.string.new_tab) { browser.newTab() }
+            item(R.string.private_tab) { browser.newTab(true) }
+            if (tab.address.isNotEmpty()) {
+                HorizontalDivider(Modifier.padding(vertical = 5.dp))
+                item(R.string.home) { browser.home() }
+                item(R.string.bookmark, !tab.incognito) { browser.bookmark() }
+                item(R.string.find) { browser.find(true) }
+                item(if (tab.desktop) R.string.mobile else R.string.desktop) { browser.desktopMode() }
+                item(R.string.share) { browser.openLink(false) }
+                item(R.string.external) { browser.openLink(true) }
+                if (browser.settings.trackerBlocking) Text(tr(R.string.blocked, tab.blocked), Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            HorizontalDivider(Modifier.padding(vertical = 5.dp))
+            item(R.string.bookmarks) { open(Screen.Bookmarks) }
+            item(R.string.history) { open(Screen.History) }
+            item(R.string.downloads) { open(Screen.Downloads) }
+            if (onPhoto != null) item(R.string.photo, action = onPhoto)
+            item(R.string.settings) { open(Screen.Settings) }
+        }
+    }
+}
+
+@Composable private fun AddressField(tab: BrowserTab, focus: FocusRequester, modifier: Modifier, onReload: () -> Unit, submit: (String) -> Unit) {
     var focused by remember(tab.id) { mutableStateOf(false) }
     var query by remember(tab.id) { mutableStateOf(tab.address) }
     LaunchedEffect(tab.address, focused) { if (!focused) query = tab.address }
-    OutlinedTextField(value = query, onValueChange = { query = it }, modifier = modifier.focusRequester(focus).onFocusChanged { focused = it.isFocused },
-        singleLine = true, shape = RoundedCornerShape(19.dp),
+    OutlinedTextField(value = query, onValueChange = { query = it },
+        modifier = modifier.testTag("reader-address").focusRequester(focus).onFocusChanged { focused = it.isFocused },
+        singleLine = true, shape = RoundedCornerShape(16.dp),
         colors = OutlinedTextFieldDefaults.colors(unfocusedContainerColor = MaterialTheme.colorScheme.surface, focusedContainerColor = MaterialTheme.colorScheme.surface,
             unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant),
-        textStyle = MaterialTheme.typography.bodyMedium.copy(textDirection = TextDirection.Ltr),
+        textStyle = MaterialTheme.typography.bodyMedium.copy(textDirection = TextDirection.ContentOrLtr),
         placeholder = { Text(tr(R.string.address), maxLines = 1, overflow = TextOverflow.Ellipsis) },
-        leadingIcon = { Icon(Icons.Default.Search, null, tint = MaterialTheme.colorScheme.primary) },
-        trailingIcon = if (focused && query.isNotBlank()) { {
-            Row {
-                if (query != tab.address) IconButton(onClick = { submit(query) }) { Icon(Icons.AutoMirrored.Filled.ArrowForward, tr(R.string.go)) }
-                IconButton(onClick = { query = "" }) { Icon(Icons.Default.Close, tr(R.string.clear)) }
-            }
-        } } else null,
+        leadingIcon = {
+            if (tab.incognito) ReaderGlyph(R.drawable.ic_reader_privacy, Modifier.size(21.dp), tr(R.string.private_tab), MaterialTheme.colorScheme.primary)
+            else Icon(Icons.Default.Search, null, tint = MaterialTheme.colorScheme.primary)
+        },
+        trailingIcon = when {
+            focused && query.isNotBlank() -> ({
+                Row {
+                    if (query != tab.address) IconButton(onClick = { submit(query) }) { Icon(Icons.AutoMirrored.Filled.ArrowForward, tr(R.string.go)) }
+                    IconButton(onClick = { query = "" }) { Icon(Icons.Default.Close, tr(R.string.clear)) }
+                }
+            })
+            !focused && tab.address.isNotEmpty() -> ({
+                IconButton(onReload) {
+                    if (tab.progress < 100) Icon(Icons.Default.Close, tr(R.string.stop)) else Icon(Icons.Default.Refresh, tr(R.string.reload))
+                }
+            })
+            else -> null
+        },
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Go),
         keyboardActions = KeyboardActions(onGo = { submit(query) }))
 }
@@ -233,133 +275,76 @@ private enum class Screen(val title: Int) {
     }
 }
 
-@Composable private fun Dock(browser: Browser, onTabs: () -> Unit, onTranslate: (() -> Unit)?) {
-    Surface(color = MaterialTheme.colorScheme.surface) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
-            val tab = browser.selected
-            IconButton(browser::backAsUnit, enabled = tab.canBack || tab.find) { Icon(Icons.AutoMirrored.Filled.ArrowBack, tr(R.string.back)) }
-            IconButton(browser::forward, enabled = tab.canForward) { Icon(Icons.AutoMirrored.Filled.ArrowForward, tr(R.string.forward)) }
-            val tabLabel = tr(R.string.tabs)
-            IconButton(onTabs, Modifier.semantics { contentDescription = "$tabLabel: ${browser.tabs.size}" }) {
-                Box(Modifier.size(26.dp).border(1.4.dp, MaterialTheme.colorScheme.onSurfaceVariant, RoundedCornerShape(8.dp)), contentAlignment = Alignment.Center) {
-                    Text(browser.tabs.size.toString(), style = MaterialTheme.typography.labelMedium)
+@Composable private fun Dock(browser: Browser, open: (Screen) -> Unit, onTranslate: (() -> Unit)?, translationActive: Boolean) {
+    val scheme = MaterialTheme.colorScheme
+    val tab = browser.selected
+    Surface(color = scheme.surface) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 9.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (tab.address.isEmpty()) {
+                DockShortcut(R.string.tabs, Modifier.weight(1f), { open(Screen.Tabs) }) { TabCounter(browser.tabs.size) }
+                DockShortcut(R.string.bookmarks, Modifier.weight(1f), { open(Screen.Bookmarks) }) { Icon(Icons.Default.Star, null, Modifier.size(21.dp)) }
+                DockShortcut(R.string.settings, Modifier.weight(1f), { open(Screen.Settings) }) { Icon(Icons.Default.Settings, null, Modifier.size(21.dp)) }
+            } else {
+                IconButton({ browser.back() }, enabled = tab.canBack || tab.find) { Icon(Icons.AutoMirrored.Filled.ArrowBack, tr(R.string.back)) }
+                IconButton(browser::forward, enabled = tab.canForward) { Icon(Icons.AutoMirrored.Filled.ArrowForward, tr(R.string.forward)) }
+                val tabLabel = tr(R.string.tabs)
+                IconButton({ open(Screen.Tabs) }, Modifier.semantics { contentDescription = "$tabLabel: ${browser.tabs.size}" }) { TabCounter(browser.tabs.size) }
+                val colors = if (translationActive) ButtonDefaults.buttonColors(containerColor = scheme.primaryContainer, contentColor = scheme.onPrimaryContainer)
+                    else ButtonDefaults.buttonColors()
+                Button(onClick = { onTranslate?.invoke() }, enabled = onTranslate != null && tab.view != null && !tab.failed && tab.progress == 100,
+                    shape = RoundedCornerShape(16.dp), colors = colors, modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("reader-translate"),
+                    contentPadding = PaddingValues(horizontal = 9.dp, vertical = 8.dp)) {
+                    ReaderGlyph(R.drawable.ic_reader_translate, Modifier.size(22.dp))
+                    Spacer(Modifier.width(7.dp)); Text(tr(R.string.translate), maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
-            }
-            Spacer(Modifier.weight(1f))
-            Button(onClick = { onTranslate?.invoke() }, enabled = onTranslate != null && tab.view != null && !tab.failed && tab.progress == 100, shape = RoundedCornerShape(14.dp),
-                contentPadding = PaddingValues(horizontal = 13.dp, vertical = 9.dp)) {
-                Text("文", style = TextStyle(fontSize = 17.sp, fontWeight = FontWeight.Bold)); Spacer(Modifier.width(7.dp)); Text(tr(R.string.translate), maxLines = 1)
             }
         }
     }
 }
-private fun Browser.backAsUnit() { back() }
 
-@Composable private fun HomeContent(tab: BrowserTab, bookmarks: List<Bookmark>, onLink: () -> Unit, onPhoto: (() -> Unit)?, onDemo: () -> Unit, onBookmark: (String) -> Unit) {
-    LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(13.dp), modifier = Modifier.fillMaxSize()) {
-        if (tab.incognito) {
-            item { Surface(shape = RoundedCornerShape(25.dp), color = MaterialTheme.colorScheme.secondaryContainer) {
-                Column(Modifier.fillMaxWidth().padding(22.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text(tr(R.string.private_header), style = MaterialTheme.typography.headlineMedium)
-                    Text(tr(R.string.private_copy), style = MaterialTheme.typography.bodyLarge)
-                    Button(onClick = onLink) { Text(tr(R.string.open_link)) }
-                }
-            } }
-        } else {
-            item {
-                Surface(shape = RoundedCornerShape(28.dp), color = Ink) {
-                    BoxWithConstraints(Modifier.fillMaxWidth()) {
-                        BookArt(Modifier.align(Alignment.TopEnd).size((maxWidth * .43f).coerceAtMost(195.dp)).padding(6.dp).alpha(.56f))
-                        Column(Modifier.fillMaxWidth().padding(22.dp), verticalArrangement = Arrangement.spacedBy(11.dp)) {
-                            Surface(color = Color(0xFF295B48), shape = RoundedCornerShape(50)) {
-                                Text(tr(R.string.manga_badge), Modifier.padding(horizontal = 9.dp, vertical = 4.dp), color = Lime, style = MaterialTheme.typography.labelSmall)
-                            }
-                            Text(tr(R.string.hero_title), style = MaterialTheme.typography.displaySmall, color = Lime)
-                            Text(tr(R.string.hero_body), style = MaterialTheme.typography.bodyMedium, color = Color(0xFFD3E6D0), modifier = Modifier.widthIn(max = 264.dp))
-                            FilledTonalButton(onClick = onLink, colors = ButtonDefaults.filledTonalButtonColors(containerColor = Apricot, contentColor = Ink)) {
-                                Text(tr(R.string.open_link)); Spacer(Modifier.width(7.dp)); Icon(Icons.AutoMirrored.Filled.ArrowForward, null, Modifier.size(18.dp))
-                            }
-                        }
-                    }
-                }
-            }
-            if (onPhoto != null) item { HomeAction("▧", R.string.photo, R.string.photo_tip, onPhoto) }
-            item { HomeAction("↗", R.string.demo_title, R.string.demo_tip, onDemo) }
-            item { Text(tr(R.string.quick_access), Modifier.padding(top = 7.dp), style = MaterialTheme.typography.titleLarge) }
-            if (bookmarks.isEmpty()) item { Text(tr(R.string.no_bookmarks), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-            items(bookmarks.take(6), key = { it.url }) { page -> HomeAction("★", page.title, webUrl(page.url)?.host ?: page.url) { onBookmark(page.url) } }
-        }
-        item { Text(tr(R.string.blocked, tab.blocked), Modifier.padding(vertical = 4.dp), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+@Composable private fun DockShortcut(label: Int, modifier: Modifier, onClick: () -> Unit, icon: @Composable () -> Unit) {
+    Column(modifier.clip(RoundedCornerShape(14.dp)).clickable(role = Role.Button, onClick = onClick).heightIn(min = 52.dp).padding(vertical = 5.dp),
+        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(3.dp, Alignment.CenterVertically)) {
+        CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.primary) { icon() }
+        Text(tr(label), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
-@Composable private fun HomeAction(mark: String, title: Int, description: Int, action: () -> Unit) = HomeAction(mark, tr(title), tr(description), action)
-@Composable private fun HomeAction(mark: String, title: String, description: String, action: () -> Unit) {
-    Surface(onClick = action, shape = RoundedCornerShape(19.dp), color = MaterialTheme.colorScheme.surface, tonalElevation = 1.dp) {
-        Row(Modifier.fillMaxWidth().padding(13.dp), verticalAlignment = Alignment.CenterVertically) {
-            Surface(shape = RoundedCornerShape(13.dp), color = MaterialTheme.colorScheme.primaryContainer) {
-                Box(Modifier.size(43.dp), contentAlignment = Alignment.Center) { Text(mark, color = MaterialTheme.colorScheme.onPrimaryContainer, fontSize = 23.sp) }
-            }
-            Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            Icon(Icons.AutoMirrored.Filled.ArrowForward, null, Modifier.size(18.dp), MaterialTheme.colorScheme.primary)
-        }
-    }
-}
-
-@Composable private fun BookArt(modifier: Modifier) {
-    Canvas(modifier) {
-        val u = size.minDimension / 160f
-        fun p(x: Float, y: Float) = Offset(x * u, y * u)
-        val orbital = Color(0xFF6C9479)
-        drawCircle(orbital, 58 * u, p(99f, 73f), style = Stroke(u))
-        drawCircle(orbital.copy(alpha = .45f), 68 * u, p(99f, 73f), style = Stroke(u))
-        for (i in 0 until 10) {
-            val a = i * .62832
-            drawCircle(Lime.copy(alpha = .47f), 1.65f * u, p(99f + 64 * cos(a).toFloat(), 73f + 64 * sin(a).toFloat()))
-        }
-        drawCircle(Apricot.copy(alpha = .95f), 15 * u, p(126f, 38f))
-        val left = Path().apply {
-            moveTo(53 * u, 65 * u); quadraticTo(76 * u, 58 * u, 98 * u, 78 * u); lineTo(98 * u, 117 * u)
-            quadraticTo(75 * u, 100 * u, 53 * u, 106 * u); close()
-        }
-        val right = Path().apply {
-            moveTo(101 * u, 78 * u); quadraticTo(122 * u, 59 * u, 144 * u, 65 * u); lineTo(144 * u, 106 * u)
-            quadraticTo(122 * u, 100 * u, 101 * u, 117 * u); close()
-        }
-        drawPath(left, Lime); drawPath(right, Color(0xFFC3E5AE))
-        listOf(76f, 83f, 90f).forEach { y ->
-            drawLine(Moss, p(62f, y), p(90f, y + 8), 1.5f * u)
-            drawLine(Moss, p(110f, y + 8), p(135f, y), 1.5f * u)
-        }
-        drawRoundRect(Color(0xFF46836A), p(40f, 36f), Size(38 * u, 23 * u), CornerRadius(7 * u))
-        listOf(49f, 58f, 67f).forEach { drawCircle(Lime, 1.9f * u, p(it, 47f)) }
+@Composable private fun TabCounter(count: Int) {
+    val color = LocalContentColor.current
+    Box(Modifier.size(24.dp).border(1.35.dp, color, RoundedCornerShape(7.dp)).clearAndSetSemantics {}, contentAlignment = Alignment.Center) {
+        Text(count.toString(), color = color, maxLines = 1, style = MaterialTheme.typography.labelMedium)
     }
 }
 
 @Composable internal fun ScreenHeader(title: Int, onBack: () -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, tr(R.string.back)) }
-        Text(tr(title), style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(start = 7.dp))
+    Surface(color = MaterialTheme.colorScheme.surface) {
+        Row(Modifier.fillMaxWidth().padding(start = 10.dp, end = 18.dp, top = 6.dp, bottom = 6.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+            FilledTonalIconButton(onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, tr(R.string.back)) }
+            Text(tr(title), style = MaterialTheme.typography.headlineMedium, modifier = Modifier.weight(1f))
+        }
     }
     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 }
 
 @Composable private fun TabGrid(browser: Browser, onSelect: (BrowserTab) -> Unit, onAdd: (Boolean) -> Unit) {
     Row(Modifier.fillMaxWidth().padding(15.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Button(onClick = { onAdd(false) }, modifier = Modifier.weight(1f)) { Icon(Icons.Default.Add, null); Text(tr(R.string.new_tab)) }
-        OutlinedButton(onClick = { onAdd(true) }, modifier = Modifier.weight(1f)) { Text(tr(R.string.private_tab)) }
+        Button(onClick = { onAdd(false) }, modifier = Modifier.weight(1f).heightIn(min = 48.dp), contentPadding = PaddingValues(horizontal = 8.dp)) {
+            Icon(Icons.Default.Add, null, Modifier.size(19.dp)); Spacer(Modifier.width(4.dp)); Text(tr(R.string.new_tab))
+        }
+        FilledTonalButton(onClick = { onAdd(true) }, modifier = Modifier.weight(1f).heightIn(min = 48.dp), contentPadding = PaddingValues(horizontal = 8.dp)) {
+            ReaderGlyph(R.drawable.ic_reader_privacy, Modifier.size(17.dp)); Spacer(Modifier.width(5.dp)); Text(tr(R.string.private_tab))
+        }
     }
     LazyVerticalGrid(columns = GridCells.Adaptive(147.dp), contentPadding = PaddingValues(horizontal = 15.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         items(browser.tabs, key = { it.id }) { tab ->
             val current = tab === browser.selected
             val host = if (tab.incognito) "" else webUrl(tab.address)?.host.orEmpty()
-            Surface(onClick = { onSelect(tab) }, shape = RoundedCornerShape(20.dp),
+            Surface(onClick = { onSelect(tab) }, modifier = Modifier.semantics { selected = current }, shape = RoundedCornerShape(20.dp),
                 color = if (current) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
-                border = if (current) androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary) else null) {
+                border = BorderStroke(1.dp, if (current) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant)) {
                 Column(Modifier.fillMaxWidth().heightIn(min = 132.dp).padding(11.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(if (tab.incognito) "◈" else host.firstOrNull()?.uppercaseChar()?.toString() ?: "↗", color = MaterialTheme.colorScheme.primary,
@@ -369,6 +354,8 @@ private fun Browser.backAsUnit() { back() }
                     Text(if (tab.incognito) tr(R.string.private_tab) else tab.title.ifBlank { tr(R.string.new_tab) }, maxLines = 2,
                         overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium)
                     if (host.isNotBlank()) Text(host, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
+                    if (current) Text(tr(R.string.tab_selected), Modifier.padding(top = 5.dp), style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer)
                 }
             }
         }
@@ -391,7 +378,7 @@ private data class SavedPage(val url: String, val title: String)
 
 @Composable private fun DownloadScreen(browser: Browser) {
     val downloads by browser.library.downloads.collectAsState(emptyList())
-    val context = androidx.compose.ui.platform.LocalContext.current
+    val context = LocalContext.current
     if (downloads.isEmpty()) { EmptyState(R.string.no_downloads); return }
     LazyColumn(contentPadding = PaddingValues(12.dp)) {
         items(downloads, key = { it.id }) { item ->

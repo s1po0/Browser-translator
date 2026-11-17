@@ -6,14 +6,21 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 private val scheme = Regex("^[a-z][a-z0-9+.-]*://", RegexOption.IGNORE_CASE)
 
-fun resolveAddress(input: String, engine: String): String? {
+/** Only URLs; never submit clipboard contents as a search. */
+fun resolveLink(input: String): String? {
     val text = input.trim()
-    if (text.isBlank()) return null
+    if (text.isEmpty() || text.any(Char::isWhitespace)) return null
     if (scheme.containsMatchIn(text)) return webUrl(text)?.toString()
     val host = text.substringBefore('/').substringBefore('?').substringBefore('#').substringBefore(':')
-    if (!text.any(Char::isWhitespace) && ('.' in host || host == "localhost" || text.startsWith('['))) {
-        webUrl("https://$text")?.let { return it.toString() }
-    }
+    if ('.' !in host && !host.equals("localhost", ignoreCase = true) && !text.startsWith('[')) return null
+    return webUrl("https://$text")?.toString()
+}
+
+fun resolveAddress(input: String, engine: String): String? {
+    val text = input.trim()
+    if (text.isEmpty()) return null
+    if (scheme.containsMatchIn(text)) return webUrl(text)?.toString()
+    resolveLink(text)?.let { return it }
     val base = when (engine) {
         "duckduckgo" -> "https://duckduckgo.com/"
         "bing" -> "https://www.bing.com/search"

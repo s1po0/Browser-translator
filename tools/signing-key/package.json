@@ -1,0 +1,6 @@
+{
+  "name": "rojink-offline-signing-key",
+  "private": true,
+  "scripts": { "build": "node build.cjs", "test": "node --test key.test.cjs" },
+  "dependencies": { "node-forge": "1.4.3" }
+}

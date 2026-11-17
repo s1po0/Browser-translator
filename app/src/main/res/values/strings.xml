@@ -22,8 +22,8 @@
     <string name="page_error">This page could not load</string>
     <string name="try_again">Try again</string>
     <string name="manga_badge">MANGA  /  MANHWA  /  WEBTOONS</string>
-    <string name="hero_title">Read between\nthe lines.</string>
-    <string name="hero_body">Translate pages and speech bubbles, right where they are.</string>
+    <string name="hero_title">Read the\nworld.</string>
+    <string name="hero_body">Web pages and comic panels, in your language.</string>
     <string name="open_link">Open a link</string>
     <string name="photo">Translate a photo</string>
     <string name="photo_tip">Choose a page, screenshot or menu from your device.</string>
@@ -95,7 +95,7 @@
     <string name="text_option">Translate text</string>
     <string name="images_option">Translate images</string>
     <string name="start">Start translation</string>
-    <string name="consent">Only after Start: Google receives the text to translate. Image recognition runs on this device unless Cloud Vision is enabled.</string>
+    <string name="consent">Image text is read on your device. After Start, Google receives only the text to translate.</string>
     <string name="vision_consent">Cloud Vision is on. Google will receive images for recognition as well as text for translation.</string>
     <string name="cloud_key">Cloud Translation API key</string>
     <string name="vision_key">Cloud Vision API key</string>
@@ -129,4 +129,20 @@
     <string name="zoom_in">Zoom in</string>
     <string name="zoom_out">Zoom out</string>
     <string name="save_original_image">Save original image</string>
+    <string name="home_kicker">THE READING BROWSER</string>
+    <string name="paste_open">Paste &amp; open</string>
+    <string name="paste_missing">Copy a web link first, or type one here.</string>
+    <string name="home_target">Target: %1$s</string>
+    <string name="home_tools">Reading tools</string>
+    <string name="photo_short">From your device</string>
+    <string name="demo_short">Text + comic panel</string>
+    <string name="tab_selected">Current tab</string>
+    <string name="original_label">Original</string>
+    <string name="translated_label">Translation</string>
+    <string name="text_option_detail">Headings, captions and page text</string>
+    <string name="images_option_detail">Speech bubbles and other image text</string>
+    <string name="consent_text_only">Google only receives text after you tap Start translation.</string>
+    <string name="applied_language">Translation · %1$s</string>
+    <string name="translation_ready">Scroll to translate more</string>
+    <string name="translation_paused">Translation paused</string>
 </resources>

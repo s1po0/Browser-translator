@@ -49,6 +49,11 @@ import dev.rojink.browser.translation.GallerySession
                         Image(display, tr(if (session.original) R.string.show_original else R.string.show_translation),
                             Modifier.fillMaxSize().graphicsLayer { scaleX = scale; scaleY = scale; translationX = shift.x; translationY = shift.y }, contentScale = ContentScale.Fit)
                     }
+                    Surface(Modifier.align(Alignment.TopStart).padding(10.dp), shape = RoundedCornerShape(50),
+                        color = MaterialTheme.colorScheme.surface, contentColor = MaterialTheme.colorScheme.onSurface) {
+                        Text(tr(if (session.original) R.string.original_label else R.string.translated_label),
+                            Modifier.padding(horizontal = 12.dp, vertical = 6.dp), style = MaterialTheme.typography.labelMedium)
+                    }
                     Row(Modifier.align(Alignment.BottomEnd).padding(8.dp), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                         val less = tr(R.string.zoom_out)
                         val more = tr(R.string.zoom_in)
@@ -67,6 +72,8 @@ import dev.rojink.browser.translation.GallerySession
                 Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         Button(onClick = { menu = true }, enabled = !session.working, shape = RoundedCornerShape(15.dp), modifier = Modifier.weight(1f)) {
+                            ReaderGlyph(R.drawable.ic_reader_translate, Modifier.size(20.dp))
+                            Spacer(Modifier.width(7.dp))
                             Text(tr(if (session.working) R.string.translating else R.string.translate), maxLines = 2)
                         }
                         if (session.after != null) OutlinedButton(session::toggle, shape = RoundedCornerShape(15.dp), modifier = Modifier.weight(1f)) {

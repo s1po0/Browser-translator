@@ -69,8 +69,8 @@ class MainActivity : ComponentActivity() {
                 }
                 val tab = browser.selected
                 val status = translator.status(tab)
-                var prompt by remember(tab.id) { mutableStateOf(false) }
-                BrowserUi(browser, app, settings, onTranslate = { prompt = true },
+                var prompt by remember(tab.id, tab.address) { mutableStateOf(false) }
+                BrowserUi(browser, app, settings, onTranslate = { prompt = true }, translationActive = status != null && !status.original,
                     onPhoto = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }, clearTranslations = {
                     translator.stopAll(); browser.dao.clearTranslations(); images.clear(); gallery.clearShares()
                 }) {

@@ -16,7 +16,7 @@ android {
         targetSdk = 37
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         versionCode = providers.gradleProperty("rojinkVersionCode").orNull?.toInt() ?: 1
-        versionName = "1.0.0"
+        versionName = "1.1.0"
     }
 
     val keyFile = System.getenv("ANDROID_KEYSTORE_FILE")?.takeIf { it.isNotBlank() }
@@ -73,6 +73,8 @@ dependencies {
     implementation(libs.mlkit.devanagari)
     implementation(libs.okhttp)
     implementation(libs.jsoup)
+    androidTestImplementation(platform(libs.compose.bom))
+    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
     androidTestImplementation("androidx.test:runner:1.7.0")
     testImplementation(libs.junit)

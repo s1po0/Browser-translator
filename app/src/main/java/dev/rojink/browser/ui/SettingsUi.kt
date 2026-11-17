@@ -5,11 +5,15 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -43,7 +47,7 @@ import kotlin.math.roundToInt
     val engines = listOf("google" to "Google", "duckduckgo" to "DuckDuckGo", "bing" to "Bing")
     val scripts = ocrChoices()
     fun asName(list: List<Pair<String, String>>, current: String) = list.toMap()[current]
-    LazyColumn(contentPadding = PaddingValues(vertical = 10.dp, horizontal = 14.dp)) {
+    LazyColumn(contentPadding = PaddingValues(vertical = 10.dp, horizontal = 14.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
         item { Section(R.string.appearance) }
         item { SettingRow(R.string.language, asName(locales, settings.uiLanguage)) { chooser = Choice(R.string.language, locales, settings.uiLanguage) { value -> update { it.copy(uiLanguage = value) } } } }
         item { SettingRow(R.string.theme, asName(themes, settings.theme)) { chooser = Choice(R.string.theme, themes, settings.theme) { value -> update { it.copy(theme = value) } } } }
@@ -104,10 +108,13 @@ import kotlin.math.roundToInt
 }
 @Composable internal fun SettingRow(title: Int, supporting: String? = null, onClick: () -> Unit) {
     ListItem(headlineContent = { Text(tr(title)) }, supportingContent = if (supporting != null) { { Text(supporting) } } else null,
-        trailingContent = { Icon(Icons.AutoMirrored.Filled.ArrowForward, null, Modifier.size(18.dp)) }, modifier = Modifier.clickable(onClick = onClick))
+        trailingContent = { Icon(Icons.AutoMirrored.Filled.ArrowForward, null, Modifier.size(18.dp), MaterialTheme.colorScheme.primary) },
+        modifier = Modifier.clip(RoundedCornerShape(15.dp)).clickable(role = Role.Button, onClick = onClick))
 }
-@Composable internal fun SettingSwitch(title: Int, checked: Boolean, change: (Boolean) -> Unit) {
-    ListItem(headlineContent = { Text(tr(title)) }, trailingContent = { Switch(checked, change) }, modifier = Modifier.clickable { change(!checked) })
+@Composable internal fun SettingSwitch(title: Int, checked: Boolean, supporting: String? = null, modifier: Modifier = Modifier, change: (Boolean) -> Unit) {
+    ListItem(headlineContent = { Text(tr(title)) }, supportingContent = if (supporting != null) { { Text(supporting) } } else null,
+        trailingContent = { Switch(checked, onCheckedChange = null) }, modifier = modifier.clip(RoundedCornerShape(15.dp))
+            .toggleable(value = checked, role = Role.Switch, onValueChange = change))
 }
 internal data class Choice(val title: Int, val values: List<Pair<String, String>>, val current: String, val pick: (String) -> Unit = {})
 @Composable internal fun ChoiceDialog(choice: Choice, dismiss: () -> Unit, pick: (String) -> Unit) {

@@ -95,7 +95,7 @@
     <string name="text_option">وەرگێڕانی دەقی پەڕە</string>
     <string name="images_option">وەرگێڕانی وێنەکان</string>
     <string name="start">دەستپێکردنی وەرگێڕان</string>
-    <string name="consent">تەنها دوای دەستپێکردن: دەق بۆ گووگڵ دەنێردرێت. ناسینەوەی نووسینی وێنە لەسەر ئامێرەکەتە، مەگەر Cloud Vision چالاک بێت.</string>
+    <string name="consent">دەقی وێنە لە ئامێرەکەت دەخوێندرێتەوە. دوای دەستپێکردن، تەنها دەق بۆ گووگڵ دەنێردرێت.</string>
     <string name="vision_consent">Cloud Vision چالاکە. وێنەکان بۆ ناسینەوە و دەقەکان بۆ وەرگێڕان بۆ گووگڵ دەنێردرێن.</string>
     <string name="cloud_key">کلیلی API ـی Cloud Translation</string>
     <string name="vision_key">کلیلی API ـی Cloud Vision</string>
@@ -129,4 +129,20 @@
     <string name="zoom_in">گەورەکردن</string>
     <string name="zoom_out">بچووککردن</string>
     <string name="save_original_image">پاشەکەوتکردنی وێنەی ڕەسەن</string>
+    <string name="home_kicker">وێبگەڕی خوێندنەوە</string>
+    <string name="paste_open">لینک بلکێنە و بیکەرەوە</string>
+    <string name="paste_missing">سەرەتا لینکێک کۆپی بکە، یان لێرە بینووسە.</string>
+    <string name="home_target">زمانی وەرگێڕان: %1$s</string>
+    <string name="home_tools">ئامرازەکانی خوێندنەوە</string>
+    <string name="photo_short">لە ئامێرەکەتەوە</string>
+    <string name="demo_short">دەق و وێنەی کۆمیک</string>
+    <string name="tab_selected">تابی ئێستا</string>
+    <string name="original_label">ڕەسەن</string>
+    <string name="translated_label">وەرگێڕان</string>
+    <string name="text_option_detail">سەردێڕ، ژێرنووس و دەقی پەڕە</string>
+    <string name="images_option_detail">بازنەی قسە و دەقی ناو وێنە</string>
+    <string name="consent_text_only">تەنها دوای دەستپێکردن، دەق بۆ گووگڵ دەنێردرێت.</string>
+    <string name="applied_language">وەرگێڕان بۆ %1$s</string>
+    <string name="translation_ready">بۆ وەرگێڕانی زیاتر سکرۆڵ بکە</string>
+    <string name="translation_paused">وەرگێڕان وەستاوە</string>
 </resources>

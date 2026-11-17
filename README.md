@@ -1,20 +1,22 @@
 # RojInk · ڕۆژئینک
 
-RojInk is a native Android browser for reading web pages, manga, manhwa, webtoons and menus in your own language. Paste a link, tap **Translate → Start translation**, and RojInk uses Google Translate for page text and recognized text inside images. **کوردیی سۆرانی (Sorani Kurdish, `ckb`)** is the default target. Open **Try a sample page** on the home screen to try a built-in panel and a menu.
+RojInk is a native Android browser for reading web pages, manga, manhwa, webtoons and menus in your own language. Tap **Paste & open** (or enter a link), then **Translate → Start translation**, and RojInk uses Google Translate for page text and recognized text inside images. **کوردیی سۆرانی (Sorani Kurdish, `ckb`)** is the default target. Open **Try a sample page** on the home screen to try a built-in panel and a menu.
 
 **بۆ دەستپێکردن:** لینکی مانگا یان مانهوا دابنێ. کاتێک پەڕەکە بار بوو، **Translate → Start translation** هەڵبژێرە. زمانی بنەڕەتی وەرگێڕان کوردیی سۆرانییە. بۆ گۆڕینی زمانی ڕووکاری ئەپ، لە سەرەتای ئەپ **کوردی** هەڵبژێرە.
 
 ## Install the APK without Android Studio
 
-1. On your Android phone (Android 8.0 or later), sign in to GitHub and open the [Build Android APK runs](https://github.com/s1po0/Browser-translator/actions/workflows/build-apk.yml). Look for a successful run on the branch you want to install. The current work is on [`arena/1fef4dd4-browser-translator`](https://github.com/s1po0/Browser-translator/actions/workflows/build-apk.yml?query=branch%3Aarena%2F1fef4dd4-browser-translator).
-2. At the bottom of the run, tap **translating-browser-debug.apk** under **Artifacts**. GitHub downloads a **ZIP**. Extract it in Files, then tap **app-debug.apk**. If Android asks, allow installation from the file manager you just used. You can turn that permission off again afterwards.
-3. Open **RojInk**. Paste a link, or try the sample page. Choose **Translate**, keep **Translate images** on, and start. Scroll for newly visible panels. Hold a translated image to peek at the original, or use **Show original** for the whole page. To save an original web image, switch to **Show original**, then long-press the image.
+1. On your Android phone (Android 8.0 or later), sign in to GitHub and open the [Build Android APK runs](https://github.com/s1po0/Browser-translator/actions/workflows/build-apk.yml?query=branch%3Aarena%2F1fef4dd4-browser-translator). Open the latest successful signed build on the working branch.
+2. Under **Artifacts**, download **rojink-signed-release.apk** and open it directly in Files. GitHub also lists the download in the run summary. **translating-browser-debug.apk** is a separate test build; older runs distribute it as a ZIP that you must extract first. If Android asks, allow installation from the file manager you just used. You can turn that permission off again afterwards.
+3. Open **RojInk**. Use **Paste & open** on a copied link, type in the address bar, or try the sample page. Tap **Translate → Start translation**. Scroll for newly visible panels. Hold a translated image to peek at the original, or use **Show original** for the whole page. To save an original web image, switch to **Show original**, then long-press the image.
 
 The debug APK is for testing (`dev.rojink.browser.debug`). GitHub's clean runners use debug signing keys, so a build from another run may not install over a previous debug build. Export bookmarks before uninstalling a debug build. Use the **signed release** APK (`dev.rojink.browser`) for stable in-place updates.
 
 ## Release signing and key custody
 
 **Do not commit or share the keystore, key passwords, or an unencrypted export.** If you already have a release key for `dev.rojink.browser`, keep using it. For the first release, generate an Android-compatible signing keystore in a trusted, private environment. Keep an independent encrypted backup in a vault you control; **GitHub Actions Secrets cannot be read back** as a backup. Store the passwords with the backup, not in the code or in chat.
+
+The optional offline tool in `tools/signing-key/` can generate a protected `.p12` and copy-ready values locally. It can also re-encrypt a previous RojInk export without changing the signing identity. To build it, run `npm ci --prefix tools/signing-key --ignore-scripts` and `npm run build --prefix tools/signing-key`; the generated HTML contains no saved keys and is ignored by Git.
 
 Use the repository's **Settings → Secrets and variables → Actions → New repository secret** page (or authenticated `gh secret set` outside chat):
 
@@ -25,7 +27,7 @@ Use the repository's **Settings → Secrets and variables → Actions → New re
 | `ANDROID_KEY_ALIAS` | The signing certificate's alias |
 | `ANDROID_KEY_PASSWORD` | The signing key's password (often the same as the store password for PKCS#12) |
 
-After the workflow is on the repository's default branch, go to **Actions → Build Android APK → Run workflow** and check **Also build the signed release APK**. Only dispatch trusted revisions with signing secrets. The workflow reconstructs the keystore in a private temporary file, deletes it at exit, checks the resulting APK with `apksigner`, and uploads **rojink-signed-release.apk**. Keep the same signing key and app ID for future releases; the workflow increases the version code with its run number. The debug build does not read the release secrets.
+On `arena/1fef4dd4-browser-translator`, a trusted push whose head commit message contains `[signed-apk]` requests a signed build. Regular pushes only build the debug APK. When the workflow is on the default branch, you can also go to **Actions → Build Android APK → Run workflow** and check **Also build the signed release APK**. The signing step reconstructs the keystore in a temporary file, deletes it at exit, verifies the APK with `apksigner`, and uploads **rojink-signed-release.apk**. Keep the same app ID and key for future releases; successful runs increase the APK version code with the workflow run number.
 
 ## Google services and privacy
 
@@ -66,11 +68,11 @@ npm test --prefix tools/browser-tests
 ```
 
 - **Build Android APK** builds and uploads an installable debug APK after every push and supports manual dispatch. The JVM tests exercise Google response parsing, batching/target selection with a mock web server, and OCR layout grouping. DOM tests cover consent gating, exact text restoration, dynamic content, responsive images and hold/release.
-- **Reader device smoke tests** use Android WebView and the real bundled OCR models with a deterministic test translation provider for reproducibility. They cover the offline sample page, Sorani direction and restoration, the image swap, hold/release, a lazy menu, Japanese and Korean recognition, and preservation of menu price pixels. These tests do not depend on an API key or assert that an arbitrary publisher's live site is compatible.
+- **Reader device smoke tests** use Android WebView and the real bundled OCR models with a deterministic test translation provider for reproducibility. They cover the redesigned Sorani browser controls and consent sheet, the offline sample page, Sorani direction and restoration, the image swap, hold/release, a lazy menu, Japanese and Korean recognition, and preservation of menu price pixels. These tests do not depend on an API key or assert that an arbitrary publisher's live site is compatible.
 - For a live end-to-end check on a phone: translate the sample headings into `ckb`, hold the comic image and release it, scroll to the menu and check prices, then try an English article and a chapter you can access. Try the explicit Japanese/Korean OCR models for that chapter. Verify the Google provider can be reached on your network.
 
 ### Roadmap / extension points
 
-`web/DocumentFeatures` and `translation/TranslationProvider` / `OcrProvider` are the internal hooks for new browser tools or engines. Web extensions, ad SDK integration, sync, and accounts are deliberately absent. Any future ad SDK would require explicit review and separation from page data. Possible additions: bubble segmentation for difficult lettering and better support for long, animated or canvas-based readers.
+`web/DocumentFeatures` and `translation/TranslationProvider` / `OcrProvider` are the internal hooks for new browser tools or engines. Web extensions, ad SDK integration, sync, and accounts are deliberately absent. Any future ad SDK would require explicit review and separation from page data. Possible additions: bubble segmentation for difficult lettering and better support for animated or canvas-based readers.
 
 The bundled Noto Naskh Arabic font license is in `app/src/main/assets/noto-naskh-ofl.txt`. The comic and menu assets are original test fixtures; their generator is under `tools/`.

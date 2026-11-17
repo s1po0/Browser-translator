@@ -1,0 +1,66 @@
+<!doctype html>
+<!--
+RojInk Signing Key — Offline copy
+ئەم فایلە ئامرازی دروستکردنی کلیلە، هیچ کلیل یان وشەی نهێنییەکی تێدا هەڵنەگیراوە.
+ئەگەر فایلەکە .txt ـە، ناوەکەی بکە RojInk-Signing-Key.html و لە Chrome یان Firefox بیکەرەوە.
+کاتێک کلیلت دروست کرد، «کلیل وەک TXT دابگرە» هەڵبژێرە بۆ بەهای ANDROID_KEYSTORE_BASE64.
+-->
+<html lang="ckb" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; connect-src 'none'; form-action 'none'; base-uri 'none'; object-src 'none'; script-src __SCRIPT_HASHES__; style-src __STYLE_HASH__;">
+<meta name="referrer" content="no-referrer">
+<title>ڕۆژئینک — کلیلی واژۆ</title>
+<style>__STYLES__</style>
+</head>
+<body>
+<main>
+  <header>
+    <span class="badge" dir="ltr">ROJINK / ANDROID RELEASE</span>
+    <h1>کلیلی واژۆی ڕۆژئینک</h1>
+    <p>کلیلی تایبەت بە وەشانی <bdi>Release</bdi> تەنها لەم براوسەرەدا دروست دەبێت. ئەم ئامرازە هیچ کلیل، وشەی نهێنی یان زانیارییەک نانێرێت.</p>
+  </header>
+  <section class="card" aria-labelledby="first-title">
+    <h2 id="first-title"><span class="step" dir="ltr">01</span> دروستکردنی کلیلی واژۆ</h2>
+    <p>ئەگەر پێشتر وەشانی <bdi>Release</bdi> ـت بە کلیلی خۆت واژۆ کردووە، هەمان کلیل بەکاربهێنە و کلیلێکی نوێ دروست مەکە. کلیلی نوێ ناتوانێت ئەپی واژۆکراو بە کلیلی پێشوو نوێ بکاتەوە.</p>
+    <p><bdi>ANDROID_STORE_PASSWORD</bdi> و <bdi>ANDROID_KEY_PASSWORD</bdi> هەمان وشەی نهێنین: <strong>١٢ پیتی هەڕەمەکی</strong>.</p>
+    <button type="button" id="generate" class="primary">کلیلی نوێ دروست بکە</button>
+    <details id="existing-key">
+      <summary>کلیلم هەیە؛ تەنها وشەی نهێنی کورت بکە</summary>
+      <p>فایلی <bdi>.p12</bdi> یان <bdi>TXT</bdi> ـی پێشوو هەڵبژێرە و وشەی نهێنیی پێشوو تەنها لێرە بنووسە. خودی کلیلی واژۆ ناگۆڕدرێت.</p>
+      <label for="existing-file">فایلی پێشوو</label>
+      <input id="existing-file" type="file" accept=".p12,.pfx,.txt">
+      <label for="existing-password">وشەی نهێنیی پێشوو</label>
+      <input id="existing-password" type="password" maxlength="160" autocomplete="off" dir="ltr">
+      <button type="button" id="shorten" class="secondary">وشەی نهێنی کورت بکە</button>
+    </details>
+    <p role="status" aria-live="polite" id="status" hidden></p>
+  </section>
+  <div id="results" hidden>
+    <section class="card" aria-labelledby="backup-title">
+      <h2 id="backup-title"><span class="step" dir="ltr">02</span> کۆپیی پارێزراو هەڵبگرە</h2>
+      <p>پێش داخستنی پەڕە، فایلە کۆدکراوەکە و وشەی نهێنییە نوێیەکە لە شوێنێکی پارێزراوی خۆت هەڵبگرە. <bdi>GitHub Secrets</bdi> کۆپییەکی گەڕاندنەوە نییە و ناتوانیت بەهاکانی لێ بخوێنیتەوە.</p>
+      <div class="actions">
+        <button type="button" id="download" class="primary">فایلی <bdi>.p12</bdi> دابگرە</button>
+        <button type="button" id="download-base64" class="secondary">کلیل وەک <bdi>TXT</bdi> دابگرە</button>
+      </div>
+      <p>لە <bdi>TXT</bdi> ـەکەدا تەنها بەهای <bdi>ANDROID_KEYSTORE_BASE64</bdi> هەیە؛ وشەی نهێنی لە فایلەکەدا نییە.</p>
+      <details><summary>پەنجەمۆری بڕوانامە — <bdi>SHA‑256</bdi></summary><output id="fingerprint" dir="ltr"></output></details>
+    </section>
+    <section class="card" aria-labelledby="github-title">
+      <h2 id="github-title"><span class="step" dir="ltr">03</span> بەهاکان لە گیتهاب دابنێ</h2>
+      <p>لە تابێکی نوێدا پرۆژەکە لە گیتهاب بکەرەوە. لە شوێنی خوارەوە هەر چوار بەهاکە بە جیا زیاد بکە؛ یەک وشەی نهێنی بۆ هەردوو <bdi>PASSWORD</bdi> بەکار دێت.</p>
+      <p dir="ltr" class="route">Settings &rarr; Secrets and variables &rarr; Actions &rarr; New repository secret</p>
+      <ul id="secrets"></ul>
+      <p class="notice">کلیل و وشەی نهێنی مەخەرە ناو چات یان کۆدی پرۆژەکە. دوای پاشەکەوتکردن، بەهاکان لەم پەڕەیە و لە لیستی کۆپیی ئامێرەکە بسڕەوە.</p>
+      <button type="button" class="secondary" id="clear">بەهاکان لەم پەڕەیە بسڕەوە</button>
+    </section>
+  </div>
+  <footer>ڕۆژئینک · هیچ زانیارییەک لەم ئامرازەوە نانێردرێت.</footer>
+</main>
+<!-- __LICENSE__ -->
+<script>__FORGE__</script>
+<script>__APP__</script>
+</body>
+</html>

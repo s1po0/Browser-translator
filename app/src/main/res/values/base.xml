@@ -1,6 +1,6 @@
 <resources>
     <style name="Theme.RojInk" parent="android:style/Theme.Material.Light.NoActionBar">
-        <item name="android:windowBackground">#F6F4EC</item>
+        <item name="android:windowBackground">#F4F3EC</item>
         <item name="android:windowLightStatusBar">true</item>
         <item name="android:windowActionModeOverlay">true</item>
     </style>

@@ -53,9 +53,10 @@ private val light = lightColorScheme(
     primary = Moss, onPrimary = Color.White, primaryContainer = Lime, onPrimaryContainer = Ink,
     secondary = Color(0xFF486350), secondaryContainer = Color(0xFFE1EBDB), onSecondaryContainer = Ink,
     tertiary = Color(0xFF995133), tertiaryContainer = Color(0xFFFFDBCB), onTertiaryContainer = Color(0xFF391609),
-    background = Color(0xFFF6F4EC), onBackground = Color(0xFF18241E), surface = Color(0xFFFBFAF5),
+    background = Color(0xFFF4F3EC), onBackground = Color(0xFF18241E), surface = Color(0xFFFEFDF8),
     onSurface = Color(0xFF18241E), surfaceVariant = Color(0xFFE8ECE2), onSurfaceVariant = Color(0xFF49564B),
-    outline = Color(0xFF738071), outlineVariant = Color(0xFFCCD6C9),
+    outline = Color(0xFF738071), outlineVariant = Color(0xFFD8DCD0),
+    surfaceContainerLow = Color(0xFFF7F7EE), surfaceContainer = Color(0xFFEEF0E5), surfaceContainerHigh = Color(0xFFE7EBDF),
 )
 private val dark = darkColorScheme(
     primary = Color(0xFFAFE1B6), onPrimary = Color(0xFF133B2A), primaryContainer = Color(0xFF25533F), onPrimaryContainer = Lime,
@@ -63,6 +64,7 @@ private val dark = darkColorScheme(
     tertiary = Apricot, tertiaryContainer = Color(0xFF653824), onTertiaryContainer = Color(0xFFFFDBCB),
     background = Color(0xFF101A16), surface = Color(0xFF18251E), surfaceVariant = Color(0xFF283830),
     onSurfaceVariant = Color(0xFFB8C9BA), outline = Color(0xFF8E9F90), outlineVariant = Color(0xFF43554A),
+    surfaceContainerLow = Color(0xFF14201A), surfaceContainer = Color(0xFF1E2D25), surfaceContainerHigh = Color(0xFF293930),
 )
 private val LocaleResources = staticCompositionLocalOf<Resources> { error("Missing RojInk resources") }
 val IsSorani = staticCompositionLocalOf { false }
@@ -78,7 +80,7 @@ val IsSorani = staticCompositionLocalOf { false }
     val font = if (sorani) FontFamily(Font(R.font.noto_naskh_arabic)) else FontFamily.SansSerif
     val type = remember(font) {
         Typography(
-            displaySmall = TextStyle(fontFamily = font, fontSize = 40.sp, lineHeight = 47.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.9).sp),
+            displaySmall = TextStyle(fontFamily = font, fontSize = 38.sp, lineHeight = 43.sp, fontWeight = FontWeight.Bold, letterSpacing = if (sorani) 0.sp else (-1.2).sp),
             headlineMedium = TextStyle(fontFamily = font, fontSize = 29.sp, lineHeight = 36.sp, fontWeight = FontWeight.Bold),
             titleLarge = TextStyle(fontFamily = font, fontSize = 23.sp, lineHeight = 31.sp, fontWeight = FontWeight.SemiBold),
             titleMedium = TextStyle(fontFamily = font, fontSize = 17.sp, lineHeight = 25.sp, fontWeight = FontWeight.SemiBold),
@@ -104,6 +106,13 @@ class Languages(context: Context) {
         lines.filter(String::isNotBlank).mapNotNull { val p = it.split('\t'); if (p.size == 3) Language(p[0], p[1], p[2]) else null }.toList()
     }
     operator fun get(code: String): Language = values.firstOrNull { it.code == code } ?: Language(code, code, code)
+}
+
+
+@Composable internal fun languageLabel(code: String): String {
+    val context = LocalContext.current
+    val language = remember(context) { Languages(context) }[code]
+    return if (IsSorani.current || code != "ckb") language.nativeName else language.englishName
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

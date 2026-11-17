@@ -19,3 +19,12 @@ keystore.properties
 .env
 .env.*
 node_modules/
+
+/RojInk-Signing-Key.html
+rojink-keystore-base64.txt
+/RojInk-Key-12.txt
+/.local/
+ANDROID_KEYSTORE_BASE64.txt
+ANDROID_STORE_PASSWORD.txt
+ANDROID_KEY_ALIAS.txt
+ANDROID_KEY_PASSWORD.txt
