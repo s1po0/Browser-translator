@@ -50,6 +50,7 @@ internal class PaddleComicOcr(private val context: Context) : AutoCloseable {
                     try {
                         val boxes = active.detect(crop)
                         for ((index, box) in boxes.withIndex()) {
+                            if (result.size >= 320) break
                             ensureActive()
                             val text = active.read(crop, box)
                             if (text.confidence >= .62f && text.value.length in 1..280 && text.value.any(Char::isLetterOrDigit)) {

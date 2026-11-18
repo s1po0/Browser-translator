@@ -99,6 +99,6 @@ npm test --prefix tools/browser-tests
 
 `web/DocumentFeatures` and `translation/TranslationProvider` / `OcrProvider` are the internal hooks for new browser tools or engines. Web extensions, ad SDK integration, sync, and accounts are deliberately absent. Any future ad SDK would require explicit review and separation from page data. Possible additions: bubble segmentation for difficult lettering and better support for animated or canvas-based readers.
 
-The PP-OCRv6 Tiny weights and dictionary are pinned locally with Apache 2.0 [license and source notices](app/src/main/assets/ocr/ppocrv6-tiny/NOTICE.txt). The universal APK uses compressed native libraries to reduce the download; Android extracts the matching ABI when installing.
+The PP-OCRv6 Tiny weights and dictionary are pinned locally with Apache 2.0 [license and source notices](app/src/main/assets/ocr/ppocrv6-tiny/NOTICE.txt). ONNX Runtime 1.30.0 uses the MIT license and [upstream third-party notices](app/src/main/assets/ocr/onnxruntime/) shipped with the binary distribution. The universal APK uses compressed native libraries to reduce the download; Android extracts the matching ABI when installing.
 
 The bundled Noto Naskh Arabic font license is in `app/src/main/assets/noto-naskh-ofl.txt`. The country names come from [Unicode CLDR 49](https://github.com/unicode-org/cldr-json), with the license bundled in `app/src/main/assets/cldr-license.txt`. The comic and menu assets are original test fixtures; their generator is under `tools/`.

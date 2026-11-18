@@ -53,21 +53,31 @@ internal class ComicSurface(private val image: Bitmap) {
                 add(pixel(x, box.top - 2)); add(pixel(x, box.bottom + 1))
             }
         }
-        return points.firstOrNull { c -> bright(c) && points.count { similar(it, c) } >= 8 }
+        return points.firstOrNull { c -> bright(c) && points.count { similar(it, c) } >= 8 } ?: run {
+            // A tall CTC box can include the next line's ascenders along its top/bottom border.
+            val sides = points.filterIndexed { i, _ -> i % 4 < 2 }
+            sides.firstOrNull { c -> bright(c) && sides.all { similar(it, c) } }
+        }
     }
 
     // Null means uncertain. A visible dark separator can veto even a same-block match from the OCR engine.
     fun sameInterior(a: Box, b: Box): Boolean? {
-        val reference = borderReference(a) ?: return null
-        if (!similar(borderReference(b) ?: return null, reference)) return false
+        val first = borderReference(a)
+        val second = borderReference(b)
+        val reference = first ?: second ?: return null
+        if (first != null && second != null && !similar(second, first)) return false
         val left = maxOf(a.left, b.left)
         val right = minOf(a.right, b.right)
         if (left >= right) return false
         val middle = (a.bottom + b.top) / 2
         val rows = if (b.top - a.bottom >= 2) a.bottom until b.top else middle - 1..middle + 1
-        return rows.all { y ->
-            (1..7).count { i -> similar(pixel(left + (right - left) * i / 8, y), reference) } >= 6
+        var cleanRows = 0
+        for (y in rows) {
+            val matches = (1..7).count { i -> similar(pixel(left + (right - left) * i / 8, y), reference) }
+            if (matches <= 3) return false
+            if (matches >= 6) cleanRows++
         }
+        return if (cleanRows * 3 >= rows.count() * 2) true else null
     }
 
     /** Only lend blank space in a light bubble. Each newly occupied pixel is checked before any paint. */

@@ -30,6 +30,8 @@ class EnglishComicSmokeTest {
                 println("English comic exact fixture lines: ML Kit ${hits(baseline)}/6, Tiny ${hits(tiny)}/6")
                 assertEquals("Tiny recognized ${tiny.map { it.text }}", fixture.size, hits(tiny))
                 assertTrue(tiny.any { it.text == "$7.25" })
+                val layout = groupForImage(OcrPage(tiny, false, comic = true), ComicSurface(image)::sameInterior)
+                assertEquals(listOf(fixture.take(4).joinToString(" "), fixture.drop(4).joinToString(" ")), layout.units.map { it.text })
             } finally { image.recycle() }
         }
     }

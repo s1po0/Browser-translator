@@ -27,8 +27,8 @@ def verify(apk):
             digest = hashlib.sha256(archive.read(root + name)).hexdigest()
             if digest != expected:
                 sys.exit(f'Invalid OCR asset {name}: {digest}')
-        for notice in ('LICENSE.txt', 'NOTICE.txt'):
-            archive.getinfo(root + notice)
+        for notice in ('ppocrv6-tiny/LICENSE.txt', 'ppocrv6-tiny/NOTICE.txt', 'onnxruntime/LICENSE.txt', 'onnxruntime/ThirdPartyNotices.txt'):
+            archive.getinfo('assets/ocr/' + notice)
         members = [item for item in archive.infolist() if item.filename.startswith('lib/') and item.filename.endswith('.so')]
         names = {item.filename for item in members}
         total = sum(item.compress_size for item in members if item.filename.split('/')[-1] in NATIVE)

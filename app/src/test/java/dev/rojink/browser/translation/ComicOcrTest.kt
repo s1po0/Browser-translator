@@ -55,10 +55,17 @@ class ComicOcrTest {
         assertEquals(listOf(Box(15, 125, 128, 147)), layout.protected)
     }
 
+    @Test fun `aligned menu rows with separate price labels do not merge in comic mode`() {
+        val lines = listOf(line("TEA OF THE DAY", 15, 20), line("SOUP OF THE DAY", 15, 54), line("$2.50", 180, 20), line("$3.50", 180, 54))
+        val layout = groupForImage(OcrPage(lines, false, comic = true)) { _, _ -> true }
+        assertEquals(listOf("TEA OF THE DAY", "SOUP OF THE DAY"), layout.units.map { it.text })
+        assertEquals(lines.takeLast(2).map { it.box }, layout.protected)
+    }
+
     @Test fun `Sorani fallback retries the whole unit and leaves bad results in the original pixels`() = runBlocking {
         val dialogue = "MY AIM WAS OFF, AND I LOST FOCUS AFTER I TOOK A LONG BREAK."
         val inputs = listOf(dialogue, "YOU", "Open https://example.com now")
-        val mock = RecordingTranslator { texts -> texts.map { if (it == dialogue) "YOU کە تێکچوو" else it } }
+        val mock = RecordingTranslator { texts -> texts.map { if (it == dialogue) "MY کە تێکچوو" else it } }
         val retry = RecordingTranslator { texts -> texts.map { if (it == dialogue) "ئامانجم تێکچوو و سەرنجم لەدەست دا." else if (it == "YOU") "تۆ" else "لینکەکە بکەرەوە" } }
         val translated = translateImageWords(inputs.map(::unit), "ckb", true, mock, retry)
         assertEquals(listOf(Call(inputs, "en", "ckb")), mock.calls)

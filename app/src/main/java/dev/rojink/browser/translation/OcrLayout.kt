@@ -36,10 +36,17 @@ internal fun groupForImage(page: OcrPage, sameInterior: ((Box, Box) -> Boolean?)
         if (isNumeric(line.text) || isProtectedImageLiteral(line.text)) { protected += line.box; emptyList() }
         else splitMenuLine(line, protected)
     }.filter { item -> item.box.width >= 4 && item.box.height >= 5 && item.text.any(Char::isLetter) }
+    // Independent right-side labels on both rows mean a menu/table, not wrapped dialogue.
+    val labelRows = if (page.comic && protected.isNotEmpty()) split.filter { line ->
+        !line.vertical && protected.any { label ->
+            label.left >= line.box.right + line.box.height / 2 &&
+                abs(label.y - line.box.y) < min(label.height, line.box.height) * .65f
+        }
+    }.toSet() else emptySet()
     val groups = mutableListOf<MutableList<OcrLine>>()
     for (line in split.sortedWith(compareBy<OcrLine> { it.box.top }.thenBy { if (page.rightFirst) -it.box.right else it.box.left }).take(320)) {
         val matching = groups.asReversed().firstOrNull { g ->
-            if (g.size >= 8) return@firstOrNull false
+            if (g.size >= 8 || line in labelRows && g.any { it in labelRows }) return@firstOrNull false
             val previous = g.last()
             val usual = g.any { canGroup(it, line) }
             val neighboring = page.comic && comicNeighbors(previous, line)
