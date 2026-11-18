@@ -8,6 +8,7 @@ import android.view.ContextThemeWrapper
 import android.net.Uri
 import android.graphics.Bitmap
 import android.os.Message
+import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
@@ -36,6 +37,7 @@ import dev.rojink.browser.data.BrowserSettings
 import dev.rojink.browser.data.Visit
 import dev.rojink.browser.data.SearchPage
 import dev.rojink.browser.search.BRAVE_SEARCH_ORIGIN
+import dev.rojink.browser.search.WebSearchCategory
 import dev.rojink.browser.search.WebSearchFilters
 import dev.rojink.browser.search.WebSearchRequest
 import dev.rojink.browser.search.WebSearchTrail
@@ -54,6 +56,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONObject
+import org.json.JSONTokener
 import java.io.ByteArrayInputStream
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicInteger
@@ -271,6 +274,37 @@ class Browser(
     }
     fun dismissImageMenu() { imageMenu = null }
 
+    private fun canOfferImageMenu(tab: BrowserTab, view: WebView) =
+        canScan(tab) && !tab.destroyed && !tab.failed && tab.view === view && features.allowImageMenu(tab)
+
+    // On Brave's image grid a button or overlay can hide the image from the native hit test.
+    // Read just the displayed thumbnail under a deliberate hold; don't change the site or its filters.
+    private fun offerSearchImageAt(tab: BrowserTab, view: WebView, x: Float, y: Float) {
+        if (imageMenu != null || !canOfferImageMenu(tab, view) || x !in 0f..1f || y !in 0f..1f) return
+        val address = tab.address
+        if (braveResults(address)?.category != WebSearchCategory.IMAGES) return
+        val revision = tab.revision
+        val script = """
+            (() => {
+              if (location.origin !== 'https://search.brave.com' || location.pathname !== '/images') return null;
+              const v = window.visualViewport;
+              const px = (v ? v.offsetLeft : 0) + $x * (v ? v.width : innerWidth);
+              const py = (v ? v.offsetTop : 0) + $y * (v ? v.height : innerHeight);
+              const image = document.elementsFromPoint(px, py).find(el =>
+                el.localName === 'img' && el.complete && el.naturalWidth > 0);
+              return image ? image.currentSrc : null;
+            })()
+        """.trimIndent()
+        view.evaluateJavascript(script) { raw ->
+            if (imageMenu != null || tab.revision != revision || tab.address != address || !canOfferImageMenu(tab, view)) {
+                return@evaluateJavascript
+            }
+            val source = raw?.takeIf { it.length < 8192 }?.let { runCatching { JSONTokener(it).nextValue() as? String }.getOrNull() }
+            val image = webUrl(source)?.takeIf { it.isHttps && it.host == "imgs.search.brave.com" && it.port == 443 }
+            if (image != null) imageMenu = image.toString()
+        }
+    }
+
     // Open the actual displayed image in the same WebView/profile, even when a site's viewer fails.
     fun openImage() {
         val url = imageMenu ?: return
@@ -468,9 +502,8 @@ class Browser(
                 if (complete && !tab.destroyed && tab.find) { tab.findMatches = count; tab.findIndex = if (count == 0) 0 else active + 1 }
             }
             web.setOnLongClickListener {
-                if (!canScan(tab) || tab.view !== web || tab.destroyed || !features.allowImageMenu(tab)) {
-                    return@setOnLongClickListener false
-                }
+                if (!canOfferImageMenu(tab, web)) return@setOnLongClickListener false
+                if (imageMenu != null) return@setOnLongClickListener true
                 val hit = web.hitTestResult ?: return@setOnLongClickListener false
                 if (hit.type != WebView.HitTestResult.IMAGE_TYPE && hit.type != WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE) {
                     return@setOnLongClickListener false
@@ -486,10 +519,28 @@ class Browser(
                     notice = R.string.download_started
                 } else notice = R.string.download_error
             }
+            // Track a hold independently when Brave's result card itself receives the WebView hit.
+            val imageHold = GestureDetector(web.context, object : GestureDetector.SimpleOnGestureListener() {
+                private var revision = -1L
+                override fun onDown(e: MotionEvent): Boolean {
+                    revision = tab.revision
+                    return true
+                }
+                override fun onLongPress(e: MotionEvent) {
+                    if (revision == tab.revision && web.width > 0 && web.height > 0) {
+                        offerSearchImageAt(tab, web, e.x / web.width, e.y / web.height)
+                    }
+                }
+            })
+            var watchImageHold = false
             var startX = 0f
             var startY = 0f
             var tracking = false
             web.setOnTouchListener { _, event ->
+                if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+                    watchImageHold = braveResults(tab.address)?.category == WebSearchCategory.IMAGES
+                }
+                if (watchImageHold) imageHold.onTouchEvent(event)
                 when (event.actionMasked) {
                     MotionEvent.ACTION_DOWN -> { startX = event.x; startY = event.y; tracking = web.scrollY == 0 }
                     MotionEvent.ACTION_POINTER_DOWN, MotionEvent.ACTION_CANCEL -> tracking = false

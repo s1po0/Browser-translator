@@ -44,8 +44,13 @@ class OpenSearchImageSmokeTest {
         val result = if (privateTab) img else """<a href="https://search.brave.com/source-page">$img</a>"""
         val html = """
             <!doctype html><meta name="viewport" content="width=device-width, initial-scale=1">
-            <style>body { margin: 0 } img { display: block; width: 100vw; height: 100vh; object-fit: contain }</style>
+            <style>
+              body { margin: 0 }
+              img { display: block; width: 100vw; height: 100vh; object-fit: contain }
+              .card-overlay { position: absolute; inset: 0 }
+            </style>
             $result
+            <div class="card-overlay" aria-hidden="true"></div>
         """.trimIndent()
         val imageOpened = AtomicBoolean(false)
         val browser = compose.activity.browser

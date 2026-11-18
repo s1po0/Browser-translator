@@ -20,6 +20,8 @@ import dev.rojink.browser.web.DocumentFeatures
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -71,29 +73,31 @@ class ReaderChromeSmokeTest {
         address.performTextInput("Erbil")
         address.performImeAction()
         val filters = compose.onNodeWithTag("sipan-search-filters")
-        filters.assertIsDisplayed().performClick()
-        compose.onNodeWithTag("sipan-country-picker").performClick()
+        filters.assertIsDisplayed().activate()
+        compose.onNodeWithTag("sipan-country-picker").activate()
         compose.onNodeWithTag("sipan-country-query").performTextInput("عێراق")
-        compose.onNodeWithTag("sipan-country-IQ").assertIsDisplayed().performClick()
-        compose.onNodeWithTag("sipan-safety-off").performScrollTo().performClick().assertIsSelected()
-        applySearchFilters()
+        compose.onNodeWithTag("sipan-country-IQ").assertIsDisplayed().activate()
+        compose.onNodeWithTag("sipan-country-picker").assert(hasText("Country: Iraq"))
+        compose.onNodeWithTag("sipan-safety-off").performScrollTo().activate().assertIsSelected()
+        compose.onNodeWithTag("sipan-apply-filters").activate()
 
         val store = (compose.activity.application as RojInkApp).settings
         val expected = WebSearchFilters(country = "IQ", safeSearch = WebSafeSearch.OFF)
-        runBlocking { withTimeout(8_000) { store.values.first { it.webSearchFilters == expected } } }
+        awaitWebFilters(expected)
         compose.onNodeWithTag("sipan-web-context").assertDoesNotExist()
         filters.assert(hasText("Iraq (.iq) · Safe Search: Off"))
         compose.onNodeWithTag("sipan-web-search-once").performClick()
         awaitAddress(braveSearchUrl(WebSearchRequest("Erbil"), expected)!!)
 
         // Reapplying in the results header removes the previous domain operator rather than stacking it.
-        filters.performClick()
-        compose.onNodeWithTag("sipan-country-picker").performClick()
-        compose.onNodeWithTag("sipan-country-world").performClick()
-        compose.onNodeWithTag("sipan-safety-strict").performScrollTo().performClick().assertIsSelected()
-        applySearchFilters()
+        filters.activate()
+        compose.onNodeWithTag("sipan-country-picker").activate()
+        compose.onNodeWithTag("sipan-country-world").activate()
+        compose.onNodeWithTag("sipan-country-picker").assert(hasText("Country: Worldwide"))
+        compose.onNodeWithTag("sipan-safety-strict").performScrollTo().activate().assertIsSelected()
+        compose.onNodeWithTag("sipan-apply-filters").activate()
         val worldwide = expected.copy(country = null, safeSearch = WebSafeSearch.STRICT)
-        runBlocking { withTimeout(8_000) { store.values.first { it.webSearchFilters == worldwide } } }
+        awaitWebFilters(worldwide)
         awaitAddress(braveSearchUrl(WebSearchRequest("Erbil"), worldwide)!!, exact = true)
         compose.onNodeWithTag("sipan-device-search").performClick()
         compose.onNodeWithTag("sipan-query").assertTextContains("Erbil")
@@ -152,11 +156,17 @@ class ReaderChromeSmokeTest {
         awaitAddress("https://search.brave.com/images?q=Erbil%20Citadel", exact = true)
     }
 
-    private fun applySearchFilters() {
-        // The IME from the country picker can still be leaving as this dialog reappears.
-        compose.onNodeWithTag("sipan-apply-filters").performSemanticsAction(SemanticsActions.OnClick) { click ->
-            assertTrue(click())
+    // These tests exercise the filter controls and persistence, not IME/window transition timing.
+    private fun SemanticsNodeInteraction.activate(): SemanticsNodeInteraction =
+        performSemanticsAction(SemanticsActions.OnClick) { assertTrue(it()) }
+
+    private fun awaitWebFilters(expected: WebSearchFilters) {
+        val store = (compose.activity.application as RojInkApp).settings
+        val actual = runBlocking {
+            withTimeoutOrNull(8_000) { store.values.first { it.webSearchFilters == expected } }
+                ?: store.values.first()
         }
+        assertEquals("Persisted web filters", expected, actual.webSearchFilters)
     }
 
     private fun awaitAddress(url: String, exact: Boolean = false) {
