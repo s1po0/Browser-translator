@@ -167,9 +167,18 @@ private enum class Screen(val title: Int) {
         return
     }
     browser.imageMenu?.let { url ->
-        AlertDialog(onDismissRequest = browser::dismissImageMenu, title = { Text(tr(R.string.save_original_image)) },
-            text = { Text(webUrl(url)?.host.orEmpty()) },
-            confirmButton = { TextButton(onClick = { browser.dismissImageMenu(); browser.saveImage(url) }) { Text(tr(R.string.save)) } },
+        AlertDialog(onDismissRequest = browser::dismissImageMenu, title = { Text(tr(R.string.image_options)) },
+            text = {
+                Column {
+                    Text(webUrl(url)?.host.orEmpty(), style = MaterialTheme.typography.bodyMedium.copy(textDirection = TextDirection.Ltr))
+                    if (!tab.incognito) TextButton(onClick = browser::saveImage, modifier = Modifier.testTag("reader-save-image")) {
+                        Text(tr(R.string.save_original_image))
+                    }
+                }
+            },
+            confirmButton = {
+                Button(onClick = browser::openImage, modifier = Modifier.testTag("reader-open-image")) { Text(tr(R.string.open_image)) }
+            },
             dismissButton = { TextButton(onClick = browser::dismissImageMenu) { Text(tr(R.string.cancel)) } })
     }
     searchChoice?.let { query ->
@@ -239,7 +248,9 @@ private enum class Screen(val title: Int) {
                             if (webSearch == null) null else R.string.search_web_failed_detail, Modifier.align(Alignment.Center), button = R.string.try_again) {
                             if (view == null) browser.navigate(tab.address) else browser.reload()
                         }
-                        view != null && tab.address.isNotEmpty() -> key(tab.id, view) { NativeView(view, Modifier.fillMaxSize()) }
+                        view != null && tab.address.isNotEmpty() -> key(tab.id, view) {
+                            NativeView(view, Modifier.fillMaxSize().testTag("reader-web-page"))
+                        }
                         else -> ReaderHome(tab, bookmarks, settings.target, onPaste = ::pasteLink, onPhoto = onPhoto,
                             onDemo = { navigate("https://rojink.invalid/demo/") }, onSaved = { screen = Screen.Bookmarks }, onBookmark = ::navigate,
                             onSearch = { showSearch(WebSearchRequest(it), onDevice = tab.incognito) })

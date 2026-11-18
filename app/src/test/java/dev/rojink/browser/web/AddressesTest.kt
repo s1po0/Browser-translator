@@ -29,4 +29,11 @@ class AddressesTest {
         assertTrue(isTracker("img.doubleclick.net"))
         assertFalse(isTracker("nodoubleclick.net"))
     }
+
+    @Test fun `the tracker list does not block Brave search assets`() {
+        for (host in listOf("search.brave.com", "imgs.search.brave.com", "cdn.search.brave.com")) {
+            assertFalse(host, isTracker(host))
+        }
+        assertTrue(isTracker("img.doubleclick.net"))
+    }
 }

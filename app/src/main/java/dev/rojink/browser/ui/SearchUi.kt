@@ -190,6 +190,10 @@ internal data class SearchLaunch(val request: WebSearchRequest = WebSearchReques
             }
             SearchCategories(request.category, "sipan-result", onSelect = { if (it != request.category) onCategory(it) })
             WebFiltersButton(filters, onFilters, Modifier.fillMaxWidth())
+            if (request.category == WebSearchCategory.IMAGES) {
+                Text(tr(R.string.search_open_image_tip), Modifier.padding(top = 3.dp),
+                    style = MaterialTheme.typography.labelSmall, color = palette.onSurfaceVariant)
+            }
         }
     }
 }

@@ -120,6 +120,7 @@ class Browser(
     var fullScreen by mutableStateOf<View?>(null)
         private set
     var imageMenu by mutableStateOf<String?>(null)
+        private set
     var notice by mutableIntStateOf(0)
     var settings by mutableStateOf(BrowserSettings())
         private set
@@ -146,6 +147,7 @@ class Browser(
     fun setVisible(value: Boolean) {
         if (visible == value) return
         visible = value
+        if (!value) dismissImageMenu()
         if (value) selected.view?.onResume() else selected.view?.onPause()
         features.foreground(selected, value && attached)
     }
@@ -159,6 +161,7 @@ class Browser(
     fun setAttached(value: Boolean) {
         if (value == attached) return
         attached = value
+        if (!value) dismissImageMenu()
         features.foreground(selected, visible && attached)
     }
 
@@ -174,6 +177,7 @@ class Browser(
     fun select(tab: BrowserTab) {
         if (selected === tab || tab !in tabs) return
         cancelPendingSearch()
+        dismissImageMenu()
         closeVideo()
         features.foreground(selected, false)
         selected.view?.onPause()
@@ -266,7 +270,17 @@ class Browser(
         tab.view?.let { if (tab === selected) cancelPendingSearch(); invalidate(tab); it.reload() }
     }
     fun dismissImageMenu() { imageMenu = null }
-    fun saveImage(url: String) {
+
+    // Open the actual displayed image in the same WebView/profile, even when a site's viewer fails.
+    fun openImage() {
+        val url = imageMenu ?: return
+        dismissImageMenu()
+        navigate(url)
+    }
+
+    fun saveImage() {
+        val url = imageMenu ?: return
+        dismissImageMenu()
         val tab = selected
         if (tab.incognito) { notice = R.string.private_no_save; return }
         val current = webUrl(url) ?: return
@@ -378,6 +392,7 @@ class Browser(
 
     private fun invalidate(tab: BrowserTab) {
         tab.revision++
+        if (tab === selected) dismissImageMenu()
         features.invalidate(tab)
     }
 
@@ -453,12 +468,16 @@ class Browser(
                 if (complete && !tab.destroyed && tab.find) { tab.findMatches = count; tab.findIndex = if (count == 0) 0 else active + 1 }
             }
             web.setOnLongClickListener {
-                val hit = web.hitTestResult
-                val image = hit.extra?.takeIf { hit.type == WebView.HitTestResult.IMAGE_TYPE || hit.type == WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE }
-                if (tab === selected && !tab.incognito && features.allowImageMenu(tab) && webUrl(image) != null) {
-                    imageMenu = image
-                    true
-                } else false
+                if (!canScan(tab) || tab.view !== web || tab.destroyed || !features.allowImageMenu(tab)) {
+                    return@setOnLongClickListener false
+                }
+                val hit = web.hitTestResult ?: return@setOnLongClickListener false
+                if (hit.type != WebView.HitTestResult.IMAGE_TYPE && hit.type != WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE) {
+                    return@setOnLongClickListener false
+                }
+                val image = webUrl(hit.extra) ?: return@setOnLongClickListener false
+                imageMenu = image.toString()
+                true
             }
             web.setDownloadListener { url, ua, disposition, mime, _ ->
                 if (tab.incognito) notice = R.string.private_no_save
