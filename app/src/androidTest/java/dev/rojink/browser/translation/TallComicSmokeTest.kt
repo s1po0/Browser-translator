@@ -29,6 +29,21 @@ class TallComicSmokeTest {
     ).map(::letters).toSet()
     private val tops = intArrayOf(0, 3584, 7800)
 
+    @Test fun darkBalloonStaysSeparateFromPanelRuleAtEachGridOffset() {
+        val panel = instrumentation.context.assets.open("en-comic-coverage.png").use { BitmapFactory.decodeStream(it) }
+        try {
+            for (offset in 0..3) {
+                val crop = Bitmap.createBitmap(panel, 0, offset, panel.width, panel.height - offset)
+                try {
+                    assertTrue("Dark proposal at offset $offset", comicBubbles(crop).any { bubble ->
+                        val box = bubble.bounds.moved(0, offset)
+                        bubble.dark && box.left in 36..56 && box.right in 324..344 && box.top in 827..850 && box.bottom in 950..977
+                    })
+                } finally { if (crop !== panel) crop.recycle() }
+            }
+        } finally { panel.recycle() }
+    }
+
     @Test fun compareIdenticalLetteringAloneAndInTallStrips() = runBlocking {
         withTimeout(135_000) {
             val short = instrumentation.context.assets.open("en-comic-coverage.png").use { it.readBytes() }
@@ -61,11 +76,17 @@ class TallComicSmokeTest {
                         val bitmap = result.bitmap
                         Log.i("SipanComicSmoke", "strip ${width}x$height -> ${bitmap?.width}x${bitmap?.height}: " +
                             "whole bubbles before MT $exact/${lines.size * copies}, 9px line $tiny/$copies, painted $drawn/${outcomes.size}, " +
-                            "skips=$skips; $timings")
+                            "skips=$skips; kept=${result.keptText}; $timings")
+                        if (skips.isNotEmpty()) Log.i("SipanComicSmoke", "strip $height skipped boxes: ${outcomes.filter { it.second != PaintDecision.DRAWN }}")
                         try {
                             val plan = planLongImage(RasterSize(width, height))
                             assertEquals("Whole dialogue identities (no duplicates or seam fragments): $seen",
                                 lines.associateWith { copies }, counts)
+                            assertEquals("Panel order (and reading order across joins): $keys", List(copies) { lines }, keys.chunked(lines.size).map { it.toSet() })
+                            for (top in positions) {
+                                assertEquals("Exactly one paint per dialogue on the panel at $top", lines.size,
+                                    outcomes.count { it.second == PaintDecision.DRAWN && it.first.y in top until top + panel.height })
+                            }
                             assertEquals("Unpainted: ${outcomes.filter { it.second != PaintDecision.DRAWN }}", lines.size * copies, drawn)
                             assertTrue("No prices or links sent to MT", seen.none { "$7.25" in it || "example.com" in it })
                             assertNotNull(bitmap)
@@ -78,7 +99,7 @@ class TallComicSmokeTest {
                     }
                     inspect(short, panel.height, intArrayOf(0))
                     // Exactly the same panels and placements; only extra blank rows change the second strip.
-                    for (h in listOf(9920, 12288)) inspect(strip(panel, h), h, tops)
+                    for (h in listOf(9920, 12288)) inspect(comicStrip(panel, h, tops), h, tops)
                 }
             } finally { panel.recycle() }
         }
@@ -109,18 +130,18 @@ class TallComicSmokeTest {
         } finally { baseline.recycle() }
     }
 
-    private fun strip(panel: Bitmap, height: Int): ByteArray {
-        val bitmap = Bitmap.createBitmap(panel.width, height, Bitmap.Config.ARGB_8888)
-        return try {
-            bitmap.eraseColor(0xFF728091.toInt())
-            val canvas = Canvas(bitmap)
-            for (top in tops) canvas.drawBitmap(panel, null, Rect(0, top, panel.width, top + panel.height), null)
-            ByteArrayOutputStream().use { out ->
-                assertTrue(bitmap.compress(Bitmap.CompressFormat.PNG, 100, out))
-                out.toByteArray()
-            }
-        } finally { bitmap.recycle() }
-    }
-
     private fun letters(text: String) = text.uppercase().filter(Char::isLetterOrDigit)
+}
+
+internal fun comicStrip(panel: Bitmap, height: Int, tops: IntArray): ByteArray {
+    val bitmap = Bitmap.createBitmap(panel.width, height, Bitmap.Config.ARGB_8888)
+    return try {
+        bitmap.eraseColor(0xFF728091.toInt())
+        val canvas = Canvas(bitmap)
+        for (top in tops) canvas.drawBitmap(panel, null, Rect(0, top, panel.width, top + panel.height), null)
+        ByteArrayOutputStream().use { out ->
+            assertTrue(bitmap.compress(Bitmap.CompressFormat.PNG, 100, out))
+            out.toByteArray()
+        }
+    } finally { bitmap.recycle() }
 }

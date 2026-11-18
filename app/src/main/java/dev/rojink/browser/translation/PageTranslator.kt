@@ -20,12 +20,14 @@ import dev.rojink.browser.web.DocumentFeatures
 import dev.rojink.browser.web.origin
 import dev.rojink.browser.web.webUrl
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.HttpUrl
 import org.json.JSONArray
@@ -37,6 +39,10 @@ import java.io.InputStream
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.coroutines.resume
+
+// Match reader.js: aligned base64 chunks keep each evaluateJavascript reply under 500 kB.
+private const val EMBEDDED_CHUNK = 400_000
+private const val MAX_EMBEDDED_CHARS = 15_000_000
 
 data class ReaderOptions(val target: String, val text: Boolean, val images: Boolean, val script: String, val useVision: Boolean, val enhancedOcr: Boolean = true)
 internal data class ReaderProviders(
@@ -243,7 +249,7 @@ class PageTranslator internal constructor(
                     try {
                         if (!current(tab, state) || !state.active) return@launch
                         val result = imageResults[candidate.url] ?: processImage.process(
-                            ImageWork(candidate, page, agent, cookies) { snapshotBitmap(tab, state, web, candidate.id) },
+                            ImageWork(candidate, page, agent, cookies) { snapshotBitmap(tab, state, web, candidate) },
                             state.options, providers, tab.incognito,
                         )
                         if (!current(tab, state)) return@launch
@@ -289,12 +295,39 @@ class PageTranslator internal constructor(
         routes[path] = route
     }
 
-    private suspend fun snapshotBitmap(tab: BrowserTab, state: PageStatus, web: WebView, id: Int): ByteArray? {
-        val response = eval(tab, state, web, call(state, "snap", id.toString())) ?: return null
-        if (response.length > 500_000) return null
-        val data = runCatching { JSONTokener(response).nextValue() as? String }.getOrNull() ?: return null
+    private suspend fun snapshotBitmap(tab: BrowserTab, state: PageStatus, web: WebView, candidate: WebImage): ByteArray? {
+        if (candidate.kind == "img" && candidate.url.isEmpty()) {
+            // A tall inline PNG/JPEG/WebP can use the same source-detail path as a native download.
+            withTimeoutOrNull(9000) { embeddedBitmap(tab, state, web, candidate.id) }?.let { return it }
+        }
+        val data = snapshotString(eval(tab, state, web, call(state, "snap", candidate.id.toString()))) ?: return null
         if (!data.startsWith("data:image/jpeg;base64,")) return null
         return runCatching { Base64.decode(data.substringAfter(','), Base64.DEFAULT) }.getOrNull()
+    }
+
+    private suspend fun embeddedBitmap(tab: BrowserTab, state: PageStatus, web: WebView, id: Int): ByteArray? {
+        val size = eval(tab, state, web, call(state, "embedded", "$id,-1"))?.toIntOrNull()
+            ?.takeIf { it in 4..MAX_EMBEDDED_CHARS && it % 4 != 1 } ?: return null
+        val bytes = ByteArray(size * 3 / 4)
+        var pos = 0
+        for (offset in 0 until size step EMBEDDED_CHUNK) {
+            val length = minOf(EMBEDDED_CHUNK, size - offset)
+            val response = eval(tab, state, web, call(state, "embedded", "$id,$offset"))
+            val decoded = withContext(Dispatchers.Default) {
+                val part = snapshotString(response)?.takeIf { it.length == length } ?: return@withContext null
+                runCatching { Base64.decode(part, Base64.DEFAULT) }.getOrNull()
+            } ?: return null
+            val expected = length * 3 / 4
+            val minimum = if (offset + length == size) expected - 2 else expected
+            if (decoded.size !in minimum..expected) return null
+            decoded.copyInto(bytes, pos)
+            pos += decoded.size
+        }
+        return if (pos == bytes.size) bytes else bytes.copyOf(pos)
+    }
+
+    private fun snapshotString(raw: String?): String? = raw?.takeIf { it.length <= 500_000 }?.let {
+        runCatching { JSONTokener(it).nextValue() as? String }.getOrNull()
     }
 
     private fun current(tab: BrowserTab, state: PageStatus): Boolean = states[tab.id] === state && tab.revision == state.revision &&

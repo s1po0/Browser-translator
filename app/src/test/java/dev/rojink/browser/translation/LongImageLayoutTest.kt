@@ -41,4 +41,14 @@ class LongImageLayoutTest {
         val neighbor = StripReading(separate, 1, 64, true, false)
         assertEquals(listOf(first, neighbor), resolveStripReadings(listOf(duplicate, first, neighbor)))
     }
+
+    @Test fun `preserves right to left rows without dropping identical dialogue in another panel`() {
+        val box = Box(150, 31, 200, 49)
+        val line = TextUnit("WAIT.", box, listOf(box), 18, false)
+        val left = line.copy(box = box.moved(-90, 0), lines = listOf(box.moved(-90, 0)))
+        val right = StripReading(line, 0, 50, true, true)
+        val other = StripReading(left, 0, 50, true, true)
+        val later = StripReading(line.movedY(1600), 1, 50, true, true)
+        assertEquals(listOf(right, other, later), resolveStripReadings(listOf(later, other, right)))
+    }
 }

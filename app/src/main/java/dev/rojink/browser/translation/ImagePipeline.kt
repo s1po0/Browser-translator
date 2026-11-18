@@ -32,6 +32,7 @@ import java.util.concurrent.TimeUnit
 import kotlin.coroutines.coroutineContext
 
 private const val INPUT_LIMIT = 14 * 1024 * 1024
+private val regionFormats = setOf("image/jpeg", "image/png", "image/webp")
 // A tall strip owns a canvas plus one detailed decode. Avoid several such scans competing for RAM.
 private val longImageSlot = Semaphore(1)
 private val budgetLock = Any()
@@ -182,10 +183,9 @@ internal class ImagePipeline(
         } else null
         if (key != null) cache.get(key)?.let { return ImageFrame.Cached(it) }
         val info = withContext(Dispatchers.Default) { imageInfo(input) }
-        if (vision == null && info.orientation == ExifInterface.ORIENTATION_NORMAL &&
-            info.mime in setOf("image/jpeg", "image/png", "image/webp")) {
-            val plan = planLongImage(info.size)
-            if (plan != null) longImageSlot.withPermit { prepareLong(input, plan, hint, options, providers, key) }?.let { return it }
+        val plan = if (vision == null && info.upright && info.mime in regionFormats) planLongImage(info.size) else null
+        if (plan != null) {
+            longImageSlot.withPermit { prepareLong(input, plan, hint, options, providers, key) }?.let { return it }
         }
         val bitmap = timed("decode") { withContext(Dispatchers.Default) { decode(input, info) } }
         var display = false
@@ -212,37 +212,43 @@ internal class ImagePipeline(
             coroutineContext.ensureActive()
             // Partial renders are valid for this session, but don't pin a missed bubble or provider error to disk.
             display = true
-            return ImageFrame.Painted(bitmap, key.takeUnless { keptText }, keptText)
+            // If a region decoder failed, do not reuse its lower-detail fallback as a complete result.
+            return ImageFrame.Painted(bitmap, key.takeUnless { keptText || plan != null }, keptText)
         } finally { if (!display) bitmap.recycle() }
     }
 
     private suspend fun prepareLong(
         input: ByteArray, plan: LongImagePlan, hint: OcrHint, options: ReaderOptions, providers: ReaderProviders, key: String?,
-    ): ImageFrame? = withContext(Dispatchers.Default) {
-        val source = LongImageOcr.open(input, plan) ?: return@withContext null
-        source.use {
-            val bitmap = Bitmap.createBitmap(plan.output.width, plan.output.height, Bitmap.Config.ARGB_8888)
-            var display = false
-            try {
-                val scan = timed("strip OCR") { source.scan(bitmap, onDevice, hint) } ?: return@withContext null
-                if (scan.readings.isEmpty()) return@withContext ImageFrame.Original(keptText = scan.suspectedMiss)
-                val translations = timed("translate") {
-                    translateImageWords(scan.readings.map { it.unit }, options.target, options.script == ENGLISH_COMIC_SCRIPT,
-                        providers.imageTranslator, providers.imageRetry)
+    ): ImageFrame? {
+        // Retain ownership until withContext returns; cancellation can discard a result at dispatcher handoff.
+        var pending: Bitmap? = null
+        try {
+            val frame = withContext(Dispatchers.Default) {
+                val source = LongImageOcr.open(input, plan) ?: return@withContext null
+                source.use {
+                    val bitmap = Bitmap.createBitmap(plan.output.width, plan.output.height, Bitmap.Config.ARGB_8888)
+                        .also { pending = it }
+                    val scan = timed("strip OCR") { source.scan(bitmap, onDevice, hint) } ?: return@withContext null
+                    if (scan.readings.isEmpty()) return@withContext ImageFrame.Original(keptText = scan.suspectedMiss)
+                    val translations = timed("translate") {
+                        translateImageWords(scan.readings.map { it.unit }, options.target, options.script == ENGLISH_COMIC_SCRIPT,
+                            providers.imageTranslator, providers.imageRetry)
+                    }
+                    val drawn = timed("strip paint") {
+                        source.paint(bitmap, scan, translations.map { it.take(2000) }, options.target, renderer, paintDecision)
+                    }
+                    val kept = scan.suspectedMiss || scan.truncated || drawn < scan.readings.size
+                    if (drawn == 0) ImageFrame.Original(keptText = kept) else ImageFrame.Painted(bitmap, key.takeUnless { kept }, kept)
                 }
-                val drawn = timed("strip paint") {
-                    source.paint(bitmap, scan, translations.map { it.take(2000) }, options.target, renderer, paintDecision)
-                }
-                val kept = scan.truncated || drawn < scan.readings.size
-                if (drawn == 0) return@withContext ImageFrame.Original(keptText = kept)
-                ensureActive()
-                display = true
-                ImageFrame.Painted(bitmap, key.takeUnless { kept || scan.suspectedMiss }, kept)
-            } finally { if (!display) bitmap.recycle() }
-        }
+            }
+            if (frame is ImageFrame.Painted) pending = null
+            return frame
+        } finally { pending?.recycle() }
     }
 
-    private data class ImageInfo(val size: RasterSize, val mime: String?, val orientation: Int)
+    private data class ImageInfo(val size: RasterSize, val mime: String?, val orientation: Int) {
+        val upright get() = orientation == ExifInterface.ORIENTATION_NORMAL || orientation == ExifInterface.ORIENTATION_UNDEFINED
+    }
 
     @Suppress("DEPRECATION")
     private fun imageInfo(data: ByteArray): ImageInfo {

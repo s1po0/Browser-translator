@@ -58,8 +58,9 @@ internal fun findComicBubbles(
         val tone = luma[seed]
         if (labels[seed] != 0 || tone < 0 || tone in 80..199) continue
         val dark = tone < 80
-        // A downsampled dark outline can look like its fill when averaged. Don't seed
-        // or bridge across a cell that still contains a much darker edge pixel.
+        // At a different strip offset, a mixed dark rule cell can seed a flood into a lighter bubble.
+        // Keep darker fills local in both directions, including the case where the rule is the seed.
+        val tolerance = if (dark) 10 else 21
         if (dark && low[seed] < tone - 17) continue
         region++
         labels[seed] = region
@@ -67,7 +68,7 @@ internal fun findComicBubbles(
         var head = 0; var end = 1
         var left = w; var top = h; var right = 0; var bottom = 0
         fun visit(next: Int) {
-            if (labels[next] != 0 || luma[next] < 0 || abs(luma[next] - tone) > 21 || dark && low[next] < tone - 17) return
+            if (labels[next] != 0 || luma[next] < 0 || abs(luma[next] - tone) > tolerance || dark && low[next] < tone - 17) return
             labels[next] = region
             queue[end++] = next
         }

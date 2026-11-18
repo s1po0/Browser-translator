@@ -55,8 +55,10 @@ internal fun planLongImage(size: RasterSize): LongImagePlan? {
         scan = size.atSample(sample)
     }
     val ratio = minOf(sqrt(IMAGE_MAX_PIXELS.toDouble() / size.area), IMAGE_MAX_EDGE.toDouble() / size.edge)
-    val output = RasterSize(floor(size.width * ratio).toInt(), floor(size.height * ratio).toInt())
-    if (output.width < 80) return null
+    val width = floor(size.width * ratio).toInt()
+    if (width < 80) return null
+    // Derive height from the rounded width so narrow strips don't stretch or collapse in the WebView.
+    val output = RasterSize(width, (size.height.toLong() * width / size.width).toInt())
     val windowHeight = minOf(WINDOW_EDGE, LONG_MAX_WINDOW_PIXELS / scan.width)
     val count = ceilDivide(scan.height, windowHeight - 2 * WINDOW_CONTEXT)
     val windows = List(count) { n ->

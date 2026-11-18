@@ -2,6 +2,8 @@ package dev.rojink.browser.translation
 
 import android.os.SystemClock
 import android.graphics.BitmapFactory
+import android.util.Base64
+import android.util.Log
 import android.webkit.WebView
 import android.widget.FrameLayout
 import androidx.test.core.app.ActivityScenario
@@ -13,6 +15,7 @@ import dev.rojink.browser.web.Browser
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeout
+import org.json.JSONObject
 import org.json.JSONTokener
 import org.junit.Assert.*
 import org.junit.Test
@@ -62,6 +65,38 @@ class ReaderSmokeTest {
         }
         assertTrue(reader.provider.inputs.any { it.contains("mint tea", true) })
         assertFalse(reader.provider.inputs.any { it.contains("$3.50") })
+    }
+
+    @Test fun longInlineComicUsesOriginalPixelsAndKeepsTheWebViewBox() = withReader { reader ->
+        val panel = instrumentation.context.assets.open("en-comic-coverage.png").use { BitmapFactory.decodeStream(it) }
+        val strip = try { comicStrip(panel, 6000, intArrayOf(0)) } finally { panel.recycle() }
+        val source = "data:image/png;base64," + Base64.encodeToString(strip, Base64.NO_WRAP)
+        reader.eval("""(() => {
+          document.querySelector('style').remove();
+          const image = document.createElement('img');
+          image.id = 'strip'; image.style.maxWidth = '1120px';
+          image.src = ${JSONObject.quote(source)};
+          document.body.replaceChildren(image);
+        })()""")
+        val image = "document.getElementById('strip')"
+        waitUntil("inline strip loaded") { reader.eval("$image.complete && $image.naturalWidth === 1440 && $image.naturalHeight === 6000") == "true" }
+        val height = reader.eval("$image.clientHeight").toInt()
+        assertEquals("1120", reader.eval("$image.clientWidth"))
+        assertTrue(reader.provider.inputs.isEmpty())
+        reader.main { reader.translation.start(reader.browser.selected, ReaderOptions("ckb", false, true, ENGLISH_COMIC_SCRIPT, false)) }
+        waitUntil("rendered long strip loads in the original box", 75_000) {
+            reader.eval("$image.src.includes('/.__rojink/') && $image.complete && $image.naturalHeight > 1700") == "true"
+        }
+        assertEquals("Read the faint 9px dialogue from the original WebView image once: ${reader.provider.inputs}", 1,
+            reader.provider.inputs.count { it.uppercase().filter(Char::isLetterOrDigit) == "IWASWRONG" })
+        assertTrue(reader.provider.inputs.none { "example.com" in it || "$7.25" in it })
+        assertEquals("1120", reader.eval("$image.clientWidth"))
+        assertEquals(height.toDouble(), reader.eval("$image.clientHeight").toDouble(), 2.0)
+        Log.i("SipanComicSmoke", "WebView inline 1440x6000: 9px dialogue read once, translated PNG loaded; layout held at 1120x$height")
+        reader.main { reader.translation.stop(reader.browser.selected) }
+        waitUntil("original inline image and attributes restored") {
+            reader.eval("$image.src.startsWith('data:image/png;') && !$image.hasAttribute('width') && $image.naturalHeight === 6000") == "true"
+        }
     }
 
     @Test fun JapaneseAndKoreanUseRealScriptModelsAndPreserveMenuPricePixels() = runBlocking {

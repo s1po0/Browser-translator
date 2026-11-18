@@ -77,3 +77,37 @@ test('prioritizes visible pictures, restores picture srcsets and supports hold-a
     assert.equal(source.getAttribute('srcset'), 'wide.png 2x');
   } finally { p.end(); }
 });
+
+test('keeps bounded original strip bytes and restores an auto-sized strip exactly', async () => {
+  const p = page('<img>');
+  try {
+    const image = p.d.querySelector('img');
+    const data = 'A'.repeat(400000) + 'c3Jj';
+    image.src = 'data:image/png;base64,' + data;
+    Object.defineProperties(image, {
+      complete: {value: true}, currentSrc: {get: () => image.src},
+      naturalWidth: {value: 1440}, naturalHeight: {value: 9920}
+    });
+    const before = image.outerHTML;
+    p.install({text:false,images:true});
+    const reader = p.get(), [record] = reader.take(true, false).images;
+    assert.equal(record.url, '');
+    assert.equal(reader.embedded(record.id, -1), data.length);
+    assert.equal(reader.embedded(record.id, 0), data.slice(0, 400000));
+    assert.equal(reader.embedded(record.id, 400000), 'c3Jj');
+    reader.active(false);
+    assert.equal(reader.embedded(record.id, 0), '');
+    reader.active(true);
+    assert.equal(reader.picture(record.id, 'https://fixture.example/.__rojink/strip.png'), true);
+    assert.equal(image.getAttribute('width'), '1440');
+    assert.equal(reader.embedded(record.id, 0), '');
+    reader.show(true);
+    assert.equal(image.outerHTML, before);
+    reader.show(false);
+    image.src = '/next.png'; // Reused by an infinite reader.
+    await tick();
+    reader.take(true, false);
+    assert.equal(image.hasAttribute('width'), false);
+    reader.stop();
+  } finally { p.end(); }
+});

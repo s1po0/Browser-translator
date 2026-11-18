@@ -107,6 +107,9 @@
         // A SPA may recycle an image node for the next panel.
         const stillOwn = previous.kind !== 'img' || (el.getAttribute('src') === previous.out && !el.hasAttribute('srcset'));
         if (stillOwn || original || previous === held) continue;
+        // Drop a size hint we added if this element has been reused for another panel.
+        const hint = previous.saved?.intrinsicWidth;
+        if (hint && el.getAttribute('width') === String(hint)) el.removeAttribute('width');
         media.delete(previous.id); mediaNodes.delete(el);
       }
       if (el.closest('[translate="no"],.notranslate,[aria-hidden="true"]')) continue;
@@ -128,6 +131,19 @@
         lang: (el.closest('[lang]')?.getAttribute('lang') || root.lang || '').slice(0, 30)});
     }
     return found.sort((a, b) => a.priority - b.priority || a.top - b.top);
+  }
+  const tall = (w, h) => w >= 80 && h > 1700 && h * 5 >= w * 8;
+  // Read embedded strip bytes without recompressing them; keep each WebView reply below the snapshot budget.
+  function embedded(id, offset) {
+    const r = media.get(id);
+    if (original || !foreground || r?.kind !== 'img' || r.applied || !r.el.isConnected) return '';
+    const el = r.el;
+    if (!el.complete || el.currentSrc !== r.url || !tall(el.naturalWidth, el.naturalHeight)) return '';
+    const prefix = /^data:image\/(?:png|jpeg|webp);base64,/i.exec(r.url)?.[0];
+    if (!prefix) return '';
+    if (offset === -1) return r.url.length - prefix.length;
+    if (!Number.isInteger(offset) || offset < 0 || offset >= r.url.length - prefix.length) return '';
+    return r.url.slice(prefix.length + offset, prefix.length + offset + 400000);
   }
   function snap(id) {
     const r = media.get(id);
@@ -155,6 +171,8 @@
       if (show) {
         for (const [source] of r.saved.sources) source.removeAttribute('srcset');
         el.removeAttribute('srcset'); el.removeAttribute('sizes');
+        // Preserve the preferred width of an auto-sized strip. CSS sizing/max-width still wins.
+        if (r.saved.intrinsicWidth) el.setAttribute('width', r.saved.intrinsicWidth);
         el.setAttribute('data-original-src', r.url);
         if (el.getAttribute('src') !== r.out) el.setAttribute('src', r.out);
       } else {
@@ -182,7 +200,8 @@
     if (r.kind === 'img' && imgSource(el) !== r.url) return false;
     if (r.kind === 'bg' && bgSource(el) !== r.url) return false;
     if (r.kind === 'img') r.saved = {
-      attrs: keepAttr(el, ['src','srcset','sizes','data-original-src']),
+      attrs: keepAttr(el, ['src','srcset','sizes','width','data-original-src']),
+      intrinsicWidth: !el.hasAttribute('width') && !el.hasAttribute('height') && tall(el.naturalWidth, el.naturalHeight) ? el.naturalWidth : 0,
       sources: Array.from(el.parentElement?.matches('picture') ? el.parentElement.querySelectorAll('source') : [], source => [source, keepAttr(source, ['srcset'])])
     };
     if (r.kind === 'bg') r.saved = { bg: el.style.getPropertyValue('background-image'), priority: el.style.getPropertyPriority('background-image') };
@@ -242,7 +261,7 @@
       const errors = failures; failures = 0;
       return { images, texts, errors, lang: (root.lang || '').slice(0,30) };
     },
-    text: textResult, picture: imageResult, snap, show,
+    text: textResult, picture: imageResult, snap, embedded, show,
     active(value) { foreground = !!value; if (foreground) signal(); else release(); },
     stop() {
       release(); show(true); observer.disconnect();
