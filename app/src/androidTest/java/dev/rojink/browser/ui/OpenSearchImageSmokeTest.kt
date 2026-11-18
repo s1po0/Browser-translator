@@ -43,11 +43,14 @@ class OpenSearchImageSmokeTest {
             <!doctype html><meta name="viewport" content="width=device-width, initial-scale=1">
             <style>
               body { margin: 0 }
+              button { display: block; position: relative; border: 0; padding: 0 }
               img { display: block; width: 100vw; height: 100vh; object-fit: contain }
               #card { position: absolute; inset: 0 }
             </style>
-            <img src="$image" alt="Sample result" onload="document.title='Image ready'">
-            <div id="card" aria-label="Image result with no working preview"></div>
+            <button type="button" aria-label="Image result with no working preview">
+              <img src="$image" alt="Sample result" onload="document.title='Image ready'">
+              <span id="card" aria-hidden="true"></span>
+            </button>
         """.trimIndent()
         val imageOpened = AtomicBoolean(false)
         val browser = compose.activity.browser
@@ -97,7 +100,19 @@ class OpenSearchImageSmokeTest {
             toggle()
             compose.waitUntil(8_000) { compose.runOnIdle { tab.directImagePage == results } }
         }
-        assertEquals("The direct mode handles clicks on the picture card", "false", evaluate(view, cardClick))
+        val handled = evaluate(view, cardClick)
+        if (handled != "false") {
+            val state = evaluate(view, """
+                (() => {
+                  const pic = document.querySelector('img');
+                  const card = document.getElementById('card');
+                  return { href: location.href, armed: typeof window.__sipanClearDirectImage, viewport: [innerWidth, innerHeight],
+                    src: pic?.currentSrc, width: pic?.naturalWidth, card: card?.parentElement?.localName,
+                    hits: document.elementsFromPoint(innerWidth / 2, innerHeight / 2).map(el => el.localName) };
+                })()
+            """.trimIndent())
+            throw AssertionError("The direct mode did not handle the picture click: $handled; $state")
+        }
         compose.waitUntil(12_000) { imageOpened.get() && compose.runOnIdle { tab.address == image && tab.canBack && tab.progress == 100 } }
         assertEquals("A standalone image should decode in the WebView", "true",
             evaluate(view, "document.images.length === 1 && document.images[0].naturalWidth > 0"))
