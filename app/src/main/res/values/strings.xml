@@ -122,6 +122,7 @@
     <string name="translation_off">Turn off translation</string>
     <string name="translate_error">Translation service unavailable. Try again or check your API key.</string>
     <string name="image_text_kept">Some image text stayed original.</string>
+    <string name="image_text_counts">Text regions: %1$d read · %2$d translated · %3$d placed</string>
     <string name="image_error">Some images could not be read or replaced.</string>
     <string name="no_image_text">No clear text was found in this image. Try a different script or a clearer image.</string>
     <string name="photo_error">This image could not be opened or translated.</string>

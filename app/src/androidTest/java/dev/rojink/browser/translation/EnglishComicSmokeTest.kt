@@ -85,6 +85,54 @@ class EnglishComicSmokeTest {
         }
     }
 
+    @Test fun curvedBalloonJoinsDistantLinesAndKeepsOutsideArtwork(): Unit = runBlocking {
+        withTimeout(90_000) {
+            val data = instrumentation.context.assets.open("en-comic-contour.png").use { it.readBytes() }
+            val seen = mutableListOf<String>()
+            val mock = object : TranslationProvider {
+                override suspend fun translate(texts: List<String>, source: String, target: String): List<String> {
+                    assertEquals("en", source)
+                    assertEquals("ckb", target)
+                    seen += texts
+                    return texts.map { if (it.contains("PLEASE")) "ئەگەر دەتوانیت، تکایە بمێنەوە." else "سوپاس." }
+                }
+            }
+            ImagePipeline(context).use { pipeline ->
+                val before = pipeline.preview(data)
+                try {
+                    val bubble = comicBubbles(before).single { it.bounds.y in 140..151 && it.bounds.x in 308..322 && !it.dark }
+                    val contour = requireNotNull(bubble.contour)
+                    val masked = requireNotNull(contour.maskedCrop(before, bubble.bounds))
+                    try {
+                        assertTrue("Outside curved corner is blanked for OCR only", Color.luminance(masked.getPixel(0, 0)) > .9f)
+                        assertNotEquals(before.getPixel(bubble.bounds.left, bubble.bounds.top), masked.getPixel(0, 0))
+                        val ink = Box(236, 99, 393, 116)
+                        assertTrue(contour.fits(ink))
+                        for (y in ink.top until ink.bottom) for (x in ink.left until ink.right) {
+                            assertEquals("Ink retained inside the crop", before.getPixel(x, y), masked.getPixel(x - bubble.bounds.left, y - bubble.bounds.top))
+                        }
+                    } finally { masked.recycle() }
+                    val options = ReaderOptions("ckb", false, true, ENGLISH_COMIC_SCRIPT, false)
+                    val rendered = pipeline.gallery(data, options, ReaderProviders(mock, "contour-fixture", null), incognito = true)
+                    val after = rendered.bitmap
+                    try {
+                        assertNotNull("Expected paint: $seen", after)
+                        fun letters(text: String) = text.uppercase().filter(Char::isLetterOrDigit)
+                        assertEquals("One complete sentence in the first bubble and a separate neighbor: $seen",
+                            listOf("IF YOU CAN, PLEASE STAY.", "THANK YOU.").map(::letters), seen.map(::letters))
+                        assertEquals(ImageTextCounts(2, 2, 2), rendered.counts)
+                        for (rect in listOf(Box(84, 41, 225, 80), Box(493, 178, 569, 241), Box(449, 278, 609, 372))) {
+                            for (y in rect.top until rect.bottom) for (x in rect.left until rect.right) {
+                                assertEquals("Original artwork/price at ($x,$y)", before.getPixel(x, y), after!!.getPixel(x, y))
+                            }
+                        }
+                        Log.i("SipanComicSmoke", "Curved contour: two widely spaced lines sent as one sentence; 2/2 regions read, translated and painted; artwork and price untouched")
+                    } finally { after?.recycle() }
+                } finally { before.recycle() }
+            }
+        }
+    }
+
     @Test fun rescansTinyLetteringAndRepairsSpacingOnTheSameDifficultPanel() = runBlocking {
         withTimeout(110_000) {
             val data = coverageBytes

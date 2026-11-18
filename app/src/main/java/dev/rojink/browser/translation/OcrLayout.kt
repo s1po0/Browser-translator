@@ -18,7 +18,10 @@ internal data class Box(val left: Int, val top: Int, val right: Int, val bottom:
     fun overlaps(other: Box) = intersection(other) > 0
 }
 internal data class OcrWord(val text: String, val box: Box)
-internal data class OcrLine(val text: String, val box: Box, val words: List<OcrWord>, val block: Int, val vertical: Boolean = false, val confidence: Float = .70f)
+internal data class OcrLine(
+    val text: String, val box: Box, val words: List<OcrWord>, val block: Int, val vertical: Boolean = false, val confidence: Float = .70f,
+    val bubbleRead: ComicBubble? = null,
+)
 internal data class OcrPage(
     val lines: List<OcrLine>, val rightFirst: Boolean, val enhancedTiles: Int = 0,
     val script: Script? = null, val comic: Boolean = false, val bubbles: List<ComicBubble> = emptyList(),
@@ -56,8 +59,16 @@ internal fun groupForImage(page: OcrPage, sameInterior: ((Box, Box) -> Boolean?)
             val enclosed = previousBubble != null && previousBubble == nextBubble
             val usual = g.any { canGroup(it, line) }
             val neighboring = page.comic && comicNeighbors(previous, line, enclosed)
+            // A verified common interior can join widely spaced dialogue. A wide rectangle around two
+            // balloons (or a narrow tail between them) is not evidence that they share a sentence.
+            val contour = previousBubble?.contour
+            val wideLeading = !neighboring && enclosed && contour != null && line.confidence >= .74f &&
+                comicNeighbors(previous, line, enclosed = true, wideLeading = true) &&
+                g.all { bubbles[it] == nextBubble && it.confidence >= .74f } &&
+                contour.fits(g.fold(line.box) { span, item -> span.union(item.box) }) &&
+                sameInterior?.invoke(previous.box, line.box) != false
             val interior = if (!enclosed && (neighboring || usual && page.comic && !line.vertical)) sameInterior?.invoke(previous.box, line.box) else null
-            (neighboring && (enclosed || interior == true) || usual && interior != false) && !g.any { a ->
+            (wideLeading || neighboring && (enclosed || interior == true) || usual && interior != false) && !g.any { a ->
                 val combined = a.box.union(line.box)
                 protected.any { it.overlaps(combined) }
             }

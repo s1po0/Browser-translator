@@ -105,12 +105,17 @@ private fun InetAddress.isPublicMediaAddress(): Boolean {
     return b.size == 16 && b[0] and 0xfe != 0xfc && b[0] and 0xe0 == 0x20
 }
 
-internal data class GalleryImage(val bitmap: Bitmap?, val keptText: Boolean)
+internal data class ImageTextCounts(val found: Int, val translated: Int, val placed: Int)
+internal data class GalleryImage(val bitmap: Bitmap?, val keptText: Boolean, val counts: ImageTextCounts? = null)
+
+private fun textCounts(units: List<TextUnit>, translations: List<String>, placed: Int) = ImageTextCounts(
+    units.size, translations.indices.count { translations[it].isNotBlank() && translations[it].trim() != units[it].text.trim() }, placed,
+)
 
 private sealed interface ImageFrame {
-    data class Original(val keptText: Boolean = false) : ImageFrame
+    data class Original(val keptText: Boolean = false, val counts: ImageTextCounts? = null) : ImageFrame
     data class Cached(val image: RenderedImage.Stored) : ImageFrame
-    data class Painted(val bitmap: Bitmap, val cacheKey: String?, val keptText: Boolean) : ImageFrame
+    data class Painted(val bitmap: Bitmap, val cacheKey: String?, val keptText: Boolean, val counts: ImageTextCounts) : ImageFrame
 }
 
 internal class ImagePipeline(
@@ -153,14 +158,14 @@ internal class ImagePipeline(
 
     suspend fun gallery(input: ByteArray, options: ReaderOptions, providers: ReaderProviders, incognito: Boolean): GalleryImage = slots.withPermit {
         when (val frame = prepare(input, options, providers, "", !incognito)) {
-            is ImageFrame.Original -> GalleryImage(null, frame.keptText)
+            is ImageFrame.Original -> GalleryImage(null, frame.keptText, frame.counts)
             is ImageFrame.Cached -> GalleryImage(withContext(Dispatchers.Default) {
                 frame.image.stream().use { BitmapFactory.decodeStream(it) } ?: throw IOException("Could not decode output")
             }, false)
             // The gallery can show the painted bitmap directly; it doesn't need a PNG round trip.
             is ImageFrame.Painted -> try {
                 frame.cacheKey?.let { timed("cache") { cache.put(it, frame.bitmap) } }
-                GalleryImage(frame.bitmap, frame.keptText)
+                GalleryImage(frame.bitmap, frame.keptText, frame.counts)
             } catch (failure: Throwable) { frame.bitmap.recycle(); throw failure }
         }
     }
@@ -179,7 +184,7 @@ internal class ImagePipeline(
         val vision = providers.visionKey
         val key = if (save) withContext(Dispatchers.Default) {
             val langHint = language.lowercase().take(16)
-            sha256("sipan-image-v5:${sha256(input)}:${options.target}:${options.script}:${options.enhancedOcr}:$langHint:${providers.variant}:${vision != null}".toByteArray())
+            sha256("sipan-image-v6:${sha256(input)}:${options.target}:${options.script}:${options.enhancedOcr}:$langHint:${providers.variant}:${vision != null}".toByteArray())
         } else null
         if (key != null) cache.get(key)?.let { return ImageFrame.Cached(it) }
         val info = withContext(Dispatchers.Default) { imageInfo(input) }
@@ -208,12 +213,13 @@ internal class ImagePipeline(
                     recognized.bubbles, paintDecision)
             } }
             val keptText = missed || drawn < layout.units.size
-            if (drawn == 0) return ImageFrame.Original(keptText = keptText)
+            val counts = textCounts(layout.units, translations, drawn)
+            if (drawn == 0) return ImageFrame.Original(keptText, counts)
             coroutineContext.ensureActive()
             // Partial renders are valid for this session, but don't pin a missed bubble or provider error to disk.
             display = true
             // If a region decoder failed, do not reuse its lower-detail fallback as a complete result.
-            return ImageFrame.Painted(bitmap, key.takeUnless { keptText || plan != null }, keptText)
+            return ImageFrame.Painted(bitmap, key.takeUnless { keptText || plan != null }, keptText, counts)
         } finally { if (!display) bitmap.recycle() }
     }
 
@@ -230,15 +236,17 @@ internal class ImagePipeline(
                         .also { pending = it }
                     val scan = timed("strip OCR") { source.scan(bitmap, onDevice, hint) } ?: return@withContext null
                     if (scan.readings.isEmpty()) return@withContext ImageFrame.Original(keptText = scan.suspectedMiss)
+                    val units = scan.readings.map { it.unit }
                     val translations = timed("translate") {
-                        translateImageWords(scan.readings.map { it.unit }, options.target, options.script,
+                        translateImageWords(units, options.target, options.script,
                             providers.imageTranslator, providers.imageRetry)
                     }
                     val drawn = timed("strip paint") {
                         source.paint(bitmap, scan, translations.map { it.take(2000) }, options.target, renderer, paintDecision)
                     }
                     val kept = scan.suspectedMiss || scan.truncated || drawn < scan.readings.size
-                    if (drawn == 0) ImageFrame.Original(keptText = kept) else ImageFrame.Painted(bitmap, key.takeUnless { kept }, kept)
+                    val counts = textCounts(units, translations, drawn)
+                    if (drawn == 0) ImageFrame.Original(kept, counts) else ImageFrame.Painted(bitmap, key.takeUnless { kept }, kept, counts)
                 }
             }
             if (frame is ImageFrame.Painted) pending = null

@@ -6,9 +6,40 @@ import kotlin.math.ceil
 import kotlin.math.sqrt
 
 /** Approximate enclosed flat backgrounds. They're proposals for OCR, never permission to erase the bubble. */
-internal data class ComicBubble(val bounds: Box, val bands: List<Box>, val dark: Boolean) {
+internal data class ComicBubble(val bounds: Box, val bands: List<Box>, val dark: Boolean, val contour: ComicContour? = null) {
     fun contains(box: Box): Boolean = box.x in bounds.left until bounds.right && box.y in bounds.top until bounds.bottom &&
         box.intersection(bounds) >= box.width * box.height * .76f
+}
+
+/** The filled cross-sections of a dense connected interior, at the proposal scan scale. */
+internal class ComicContour(private val top: Int, private val step: Int, private val spans: IntArray, private val tone: Int) {
+    private val bottom get() = top + spans.size / 2 * step
+
+    fun fits(box: Box): Boolean {
+        if (box.width <= 0 || box.height <= 0 || box.top < top || box.bottom > bottom) return false
+        for (i in (box.top - top) / step..(box.bottom - 1 - top) / step) {
+            if (box.left < spans[i * 2] || box.right > spans[i * 2 + 1]) return false
+        }
+        return true
+    }
+
+    // Ignore normal detector padding along the edges, not a box that actually straddles the outline.
+    fun containsInk(box: Box): Boolean = fits(box.expand(-box.width / 9, -box.height / 5))
+
+    /** Pixels outside the contour are neutralized only in a temporary OCR crop. */
+    fun maskedCrop(image: Bitmap, area: Box): Bitmap? {
+        val size = area.width.toLong() * area.height
+        if (size !in 1L..720_000L || area.clip(image.width, image.height) != area) return null
+        val blank = 0xff000000.toInt() or (tone * 0x010101)
+        val pixels = IntArray(size.toInt()) { blank }
+        for (y in maxOf(top, area.top) until minOf(bottom, area.bottom)) {
+            val index = (y - top) / step * 2
+            val from = maxOf(spans[index], area.left)
+            val to = minOf(spans[index + 1], area.right)
+            if (from < to) image.getPixels(pixels, (y - area.top) * area.width + from - area.left, area.width, from, y, to - from, 1)
+        }
+        return Bitmap.createBitmap(pixels, area.width, area.height, Bitmap.Config.ARGB_8888)
+    }
 }
 
 internal fun comicBubbles(bitmap: Bitmap): List<ComicBubble> {
@@ -94,12 +125,18 @@ internal fun findComicBubbles(
             }
             band = null; inkCount = 0
         }
-        for (y in top + 2 until bottom - 2) {
+        val spans = IntArray(box.height * 2)
+        var filled = 0
+        for (y in top until bottom) {
             val row = y * w
             var a = left; var b = right - 1
             while (a < b && labels[row + a] != region) a++
             while (b > a && labels[row + b] != region) b--
-            if (b - a < box.width * .33f) continue
+            val i = (y - top) * 2
+            spans[i] = a * step
+            spans[i + 1] = minOf((b + 1) * step, imageWidth)
+            filled += b - a + 1
+            if (y < top + 2 || y >= bottom - 2 || b - a < box.width * .33f) continue
             var first = b; var last = a; var count = 0
             for (x in a + 2 until b - 1) {
                 val index = row + x
@@ -114,7 +151,12 @@ internal fun findComicBubbles(
             inkCount += count
         }
         finish()
-        if (bands.isNotEmpty() && bands.size <= 9) result += ComicBubble(toImage(box), bands, dark)
+        if (bands.isNotEmpty() && bands.size <= 9) {
+            // Fill holes from letter strokes. A concave or fragmented shape with large holes
+            // is still a recovery proposal, but not evidence for masking or joining distant lines.
+            val contour = ComicContour(top * step, step, spans, tone).takeIf { end * 5 >= filled * 4 }
+            result += ComicBubble(toImage(box), bands, dark, contour)
+        }
         if (result.size >= 96) break
     }
     return result
@@ -129,7 +171,7 @@ internal fun missedBubbleBands(bubble: ComicBubble, lines: List<OcrLine>): List<
     // Ink bands are padded and may span closely spaced lines. Test vertical union of broad readings,
     // not a sum of overlapping OCR boxes or a high-confidence stub such as just "ONG.".
     val spans = lines.asSequence().filter { line ->
-        line.confidence >= .70f && !line.vertical &&
+        line.confidence >= .70f && !line.vertical && (bubble.contour?.containsInk(line.box) != false) &&
             minOf(line.box.right, band.right) - maxOf(line.box.left, band.left) >= band.width * .66f &&
             line.box.top < band.bottom && line.box.bottom > band.top && line.text.any(Char::isLetterOrDigit)
     }.map { maxOf(band.top, it.box.top - slack) to minOf(band.bottom, it.box.bottom + slack) }.sortedBy { it.first }

@@ -80,6 +80,10 @@ import dev.rojink.browser.translation.GallerySession
                             Text(tr(if (session.original) R.string.show_translation else R.string.show_original), maxLines = 2)
                         }
                     }
+                    session.textCounts?.let { counts ->
+                        Text(tr(R.string.image_text_counts, counts.found, counts.translated, counts.placed),
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                     if (session.after != null && !session.privateGallery) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                         TextButton(onClick = { write.launch("sipan-translation.png") }) { Text(tr(R.string.save)) }
                         TextButton(onClick = session::share) { Text(tr(R.string.share)) }

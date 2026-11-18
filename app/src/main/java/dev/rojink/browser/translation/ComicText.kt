@@ -67,6 +67,21 @@ internal fun useComicOcr(base: OcrPage, hint: OcrHint): Boolean {
         lang == "en" && letterLines.size <= 2 && letterLines.all { englishLettering(it.text) && it.confidence < .69f }
 }
 
+/** Only replace a geometrically dirty reading when the inner crop corroborates its actual dialogue. */
+internal fun replacesSpilledLine(clean: OcrLine, dirty: OcrLine): Boolean {
+    val contour = clean.bubbleRead?.contour ?: return false
+    if (clean.confidence < .89f || clean.vertical || dirty.vertical || !contour.fits(clean.box) || contour.containsInk(dirty.box) ||
+        areaOverlap(dirty.box, clean.box) < .75 || abs(clean.box.y - dirty.box.y) > clean.box.height * .60f ||
+        imageLiteralSpans(clean.text).isNotEmpty() || imageLiteralSpans(dirty.text).isNotEmpty()) return false
+    val reading = words(clean.text)
+    val old = words(dirty.text)
+    if (reading.size < 2 || reading.sumOf(String::length) < 6 || old.size - reading.size !in 1..2) return false
+    // Do not trade a valid sentence for a shorter guess, or swallow an independent neighboring label.
+    val start = (0..old.size - reading.size).firstOrNull { old.subList(it, it + reading.size) == reading } ?: return false
+    val extras = old.take(start) + old.drop(start + reading.size)
+    return extras.all { it.length <= 3 } && (dirty.words.isEmpty() || dirty.words.count { !contour.containsInk(it.box) } >= extras.size)
+}
+
 /** Prefer the original word geometry; recover absent text and fix demonstrable spacing without double-painting. */
 internal fun reconcileComicOcr(
     original: List<OcrLine>, alternative: List<OcrLine>, explicit: Boolean, lightBorder: (Box) -> Boolean,
@@ -110,6 +125,10 @@ internal fun reconcileComicOcr(
         if (overlap.size != 1) continue
         val index = overlap.single()
         val old = result[index]
+        if (replacesSpilledLine(line, old) && result.indices.none { it != index && areaOverlap(result[it].box, line.box) > .43 }) {
+            result[index] = line.copy(block = old.block)
+            continue
+        }
         if (old.vertical || imageLiteralSpans(old.text).isNotEmpty()) continue
         val oldLetters = alphaText(old.text)
         if (shortLetter(text) && oldLetters == "l" && line.confidence >= .77f && areaOverlap(old.box, line.box) > .80 && lightBorder(line.box)) {
@@ -129,7 +148,7 @@ internal fun reconcileComicOcr(
     return result
 }
 
-internal fun comicNeighbors(a: OcrLine, b: OcrLine, enclosed: Boolean = false): Boolean {
+internal fun comicNeighbors(a: OcrLine, b: OcrLine, enclosed: Boolean = false, wideLeading: Boolean = false): Boolean {
     if (a.vertical || b.vertical || !englishLettering(a.text) || !englishLettering(b.text)) return false
     if (imageLiteralSpans(a.text).isNotEmpty() || imageLiteralSpans(b.text).isNotEmpty()) return false
     val height = minOf(a.box.height, b.box.height).coerceAtLeast(1)
@@ -137,7 +156,7 @@ internal fun comicNeighbors(a: OcrLine, b: OcrLine, enclosed: Boolean = false): 
     val gap = b.box.top - a.box.bottom
     val overlap = minOf(a.box.right, b.box.right) - maxOf(a.box.left, b.box.left)
     val larger = maxOf(a.box.width, b.box.width)
-    return b.box.y > a.box.y + height * .50f && gap > -height * .59f && gap < height * (if (enclosed) 2.05f else .88f) &&
+    return b.box.y > a.box.y + height * .50f && gap > -height * .59f && (wideLeading || gap < height * (if (enclosed) 2.05f else .88f)) &&
         maxOf(a.box.height, b.box.height) <= height * (if (enclosed) 2.25f else 1.65f) && overlap > width * .56f &&
         abs(a.box.x - b.box.x) <= maxOf(height * .72f, if (enclosed) larger * .28f else width * .17f)
 }

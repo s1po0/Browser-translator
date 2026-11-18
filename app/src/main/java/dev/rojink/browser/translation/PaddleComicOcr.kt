@@ -53,21 +53,27 @@ internal class PaddleComicOcr(private val context: Context) : AutoCloseable {
                 val result = mutableListOf<OcrLine>()
                 var budget = if (refine) MAX_REFINEMENTS else 0
                 var id = 1_000_000
-                fun read(box: Box, region: ComicBubble?, recovered: Boolean, isolatedBand: Boolean = false) {
+                fun read(box: Box, region: ComicBubble?, recovered: Boolean, isolatedBand: Boolean = false, masked: Bitmap? = null) {
                     if (result.size >= MAX_LINES || box.width < 6 || box.height < 5) return
                     ensureActive()
-                    val tiny = active.read(image, box)
+                    val raster = masked ?: image
+                    val local = if (masked != null) checkNotNull(region).bounds.let { box.moved(-it.left, -it.top) } else box
+                    val tiny = active.read(raster, local)
                     if (isolatedBand && (tiny.confidence < .93f || !reliableEnglish(tiny.value))) return
                     val base = baseline.firstOrNull { abs(it.box.y - box.y) < box.height * .45f && areaOverlap(it.box, box) > .69 }
                     val needsReview = !isolatedBand && budget > 0 && needsLatinReview(tiny, base, region != null, recovered)
                     val text = if (needsReview) {
                         budget--
-                        val small = active.refine(image, box)
+                        val small = active.refine(raster, local)
                         if (small != null && preferLatinReview(tiny, small, base)) small else tiny
                     } else tiny
                     if (text.confidence >= if (recovered) .76f else .62f) {
                         if (text.value.length in 1..280 && text.value.any(Char::isLetterOrDigit)) {
-                            mergeOcrLines(result, listOf(OcrLine(text.value, box, emptyList(), id++, confidence = text.confidence)))
+                            val grounded = region?.takeIf { recovered && it.contour?.fits(box) == true }
+                            val reading = OcrLine(text.value, box, emptyList(), id++, confidence = text.confidence, bubbleRead = grounded)
+                            val spilled = if (grounded != null) result.indexOfFirst { replacesSpilledLine(reading, it) } else -1
+                            if (spilled >= 0) result[spilled] = reading
+                            else if (result.none { it.bubbleRead != null && replacesSpilledLine(it, reading) }) mergeOcrLines(result, listOf(reading))
                         }
                     }
                 }
@@ -90,10 +96,19 @@ internal class PaddleComicOcr(private val context: Context) : AutoCloseable {
                         .forEach { read(it, bubble, true, isolatedBand = true) }
                     val remaining = missedBubbleBands(bubble, baseline + result)
                     if (remaining.isEmpty()) continue
-                    val proposals = detectRegion(active, image, bubble.bounds, true).filter { box ->
-                        remaining.any { band -> abs(box.y - band.y) <= maxOf(box.height, band.height) * .68f && areaOverlap(box, band) > .30 }
-                    }.take(12)
-                    for (box in proposals) read(box, bubble, true)
+                    val area = bubble.bounds
+                    val contour = bubble.contour
+                    val masked = contour?.maskedCrop(image, area)
+                    try {
+                        val detected = if (masked != null) active.detect(masked, true).map { it.moved(area.left, area.top) }
+                            else detectRegion(active, image, area, true)
+                        val proposals = detected.filter { box ->
+                            (masked == null || contour?.containsInk(box) == true) && remaining.any { band ->
+                                abs(box.y - band.y) <= maxOf(box.height, band.height) * .68f && areaOverlap(box, band) > .30
+                            }
+                        }.take(12)
+                        for (box in proposals) read(box, bubble, true, masked = masked)
+                    } finally { masked?.recycle() }
                     // Some tiny lines never cross the DB threshold, even at crop scale. Try only the isolated ink bands.
                     missedBubbleBands(bubble, baseline + result).take(3).forEach { box -> read(box, bubble, true) }
                 }

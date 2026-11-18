@@ -42,6 +42,8 @@ internal class GallerySession(
         private set
     var feedback by mutableIntStateOf(0)
         private set
+    var textCounts by mutableStateOf<ImageTextCounts?>(null)
+        private set
     var lastOptions by mutableStateOf<ReaderOptions?>(null)
         private set
     private var input: ByteArray? = null
@@ -75,12 +77,14 @@ internal class GallerySession(
         val id = revision
         working = true
         error = 0
+        textCounts = null
         lastOptions = options
         job = browser.scope.launch {
             try {
                 val result = pipeline.gallery(data, options, providers.get(privateGallery, options.useVision), privateGallery)
                 if (id != revision) { result.bitmap?.recycle(); return@launch }
                 after = result.bitmap
+                textCounts = result.counts
                 original = after == null
                 if (result.keptText) error = R.string.image_text_kept
                 else if (after == null) error = R.string.no_image_text
@@ -97,7 +101,7 @@ internal class GallerySession(
         revision++
         job?.cancel(); job = null
         input = null; before = null; after = null
-        error = 0; feedback = 0; lastOptions = null
+        error = 0; feedback = 0; lastOptions = null; textCounts = null
         original = true; loading = false; working = false
         if (active) browser.setAttached(true)
         active = false

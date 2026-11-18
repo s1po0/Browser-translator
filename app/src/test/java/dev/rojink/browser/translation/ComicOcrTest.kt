@@ -141,6 +141,45 @@ class ComicOcrTest {
         assertEquals(listOf("I… I MISSED YOU.", "I AM HERE."), layout.units.map { it.text })
     }
 
+    @Test fun `a verified continuous contour joins distant dialogue but a tail or a literal does not`() {
+        val first = line("IF YOU CAN,", 58, 30, 1).copy(confidence = .95f)
+        val second = line("PLEASE STAY.", 60, 105, 2).copy(confidence = .96f)
+        val bounds = Box(20, 10, 212, 148)
+        fun shape(narrow: Boolean) = ComicContour(bounds.top, 1, IntArray(bounds.height * 2) { i ->
+            if (narrow && i / 2 in 62..66) if (i % 2 == 0) 111 else 122
+            else if (i % 2 == 0) bounds.left else bounds.right
+        }, 240)
+        val bubble = ComicBubble(bounds, listOf(first.box, second.box), false, shape(false))
+        val page = OcrPage(listOf(first, second), false, comic = true, bubbles = listOf(bubble))
+        fun text(input: OcrPage, clean: Boolean = true) = groupForImage(input) { _, _ -> clean }.units.map { it.text }
+        val separate = listOf(first.text, second.text)
+        assertEquals(listOf("IF YOU CAN, PLEASE STAY."), text(page))
+        assertEquals(separate, text(page.copy(bubbles = listOf(bubble.copy(contour = null)))))
+        assertEquals(separate, text(page.copy(bubbles = listOf(bubble.copy(contour = shape(true))))))
+        assertEquals(separate, text(page, clean = false))
+        val label = line("ID42", 60, 76, 3)
+        val protected = groupForImage(page.copy(lines = page.lines + label)) { _, _ -> true }
+        assertEquals(separate, protected.units.map { it.text })
+        assertEquals(listOf(label.box), protected.protected)
+    }
+
+    @Test fun `a spilled reading does not cover inner ink and can only be replaced by a corroborating crop`() {
+        val band = Box(54, 43, 165, 63)
+        val bounds = Box(20, 20, 200, 100)
+        val contour = ComicContour(bounds.top, 1, IntArray(bounds.height * 2) { if (it % 2 == 0) bounds.left else bounds.right }, 246)
+        val bubble = ComicBubble(bounds, listOf(band), false, contour)
+        val dirty = OcrLine("WHO ARE YOU?! PY", Box(54, 43, 244, 63), emptyList(), 0, confidence = .98f)
+        val clean = OcrLine("WHO ARE YOU?!", band, emptyList(), 1, confidence = .94f, bubbleRead = bubble)
+        assertEquals(listOf(band), missedBubbleBands(bubble, listOf(dirty)))
+        assertTrue(missedBubbleBands(bubble, listOf(clean)).isEmpty())
+        fun reconcile(before: OcrLine, after: OcrLine) = reconcileComicOcr(listOf(before), listOf(after), explicit = true) { true }
+        assertEquals(listOf(clean.copy(block = dirty.block)), reconcile(dirty, clean))
+        assertEquals(listOf(dirty), reconcile(dirty, clean.copy(bubbleRead = null)))
+        assertEquals(listOf(dirty), reconcile(dirty, clean.copy(text = "WHO ARE THEY?!")))
+        val protected = dirty.copy(text = "WHO ARE YOU?! ID42")
+        assertEquals(listOf(protected), reconcile(protected, clean))
+    }
+
     @Test fun `proposes an enclosed faint line even when averaged pixels hide it`() {
         val width = 52
         val height = 85

@@ -122,6 +122,7 @@
     <string name="translation_off">ناچالاککردنی وەرگێڕان</string>
     <string name="translate_error">خزمەتگوزاریی وەرگێڕان بەردەست نییە. دووبارە هەوڵ بدەرەوە یان کلیلەکەت بپشکنە.</string>
     <string name="image_text_kept">هەندێک دەقی ناو وێنە بە ڕەسەنی مایەوە.</string>
+    <string name="image_text_counts">بەشەکانی دەق: %1$d خوێندرایەوە · %2$d وەرگێڕدرا · %3$d لەسەر وێنە دانرا</string>
     <string name="image_error">هەندێک وێنە نەخوێندرانەوە یان نەگۆڕدران.</string>
     <string name="no_image_text">نووسینی ڕوون لەم وێنەیە نەدۆزرایەوە. جۆری نووسین بگۆڕە یان وێنەیەکی ڕوونتر تاقی بکەرەوە.</string>
     <string name="photo_error">ئەم وێنەیە نەکرایەوە یان وەرنەگێڕدرا.</string>
