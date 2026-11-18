@@ -16,7 +16,7 @@ android {
         targetSdk = 37
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         versionCode = providers.gradleProperty("rojinkVersionCode").orNull?.toInt() ?: 1
-        versionName = "1.5.1"
+        versionName = "1.6.0"
     }
 
     val keyFile = System.getenv("ANDROID_KEYSTORE_FILE")?.takeIf { it.isNotBlank() }
@@ -43,6 +43,9 @@ android {
         }
     }
 
+    // Compress the universal APK's native libraries; the installer extracts them per device ABI.
+    // ELF segment alignment is still checked in CI for the added OCR runtime.
+    packaging { jniLibs.useLegacyPackaging = true }
     buildFeatures { compose = true }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -71,6 +74,7 @@ dependencies {
     implementation(libs.mlkit.japanese)
     implementation(libs.mlkit.korean)
     implementation(libs.mlkit.devanagari)
+    implementation(libs.onnxruntime.android)
     implementation(libs.okhttp)
     implementation(libs.jsoup)
     androidTestImplementation(platform(libs.compose.bom))

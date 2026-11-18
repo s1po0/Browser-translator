@@ -19,7 +19,10 @@ internal data class Box(val left: Int, val top: Int, val right: Int, val bottom:
 }
 internal data class OcrWord(val text: String, val box: Box)
 internal data class OcrLine(val text: String, val box: Box, val words: List<OcrWord>, val block: Int, val vertical: Boolean = false, val confidence: Float = .70f)
-internal data class OcrPage(val lines: List<OcrLine>, val rightFirst: Boolean, val enhancedTiles: Int = 0)
+internal data class OcrPage(
+    val lines: List<OcrLine>, val rightFirst: Boolean, val enhancedTiles: Int = 0,
+    val script: Script? = null, val comic: Boolean = false,
+)
 internal data class TextUnit(val text: String, val box: Box, val lines: List<Box>, val sizeHint: Int, val vertical: Boolean)
 internal data class ImageLayout(val units: List<TextUnit>, val protected: List<Box>)
 
@@ -27,16 +30,21 @@ private val numeric = Regex("^(?:(?:USD|EUR|IQD|JPY|CNY|KRW|TRY|SAR|GBP)\\s*|[\\
 private fun isNumeric(text: String) = numeric.matches(text.trim())
 
 /** ML Kit blocks are hints, not a promise that two adjacent lines share one speech bubble. */
-internal fun groupForImage(page: OcrPage): ImageLayout {
+internal fun groupForImage(page: OcrPage, sameInterior: ((Box, Box) -> Boolean?)? = null): ImageLayout {
     val protected = mutableListOf<Box>()
     val split = page.lines.flatMap { line ->
-        if (isNumeric(line.text)) { protected += line.box; emptyList() }
+        if (isNumeric(line.text) || isProtectedImageLiteral(line.text)) { protected += line.box; emptyList() }
         else splitMenuLine(line, protected)
     }.filter { item -> item.box.width >= 4 && item.box.height >= 5 && item.text.any(Char::isLetter) }
     val groups = mutableListOf<MutableList<OcrLine>>()
     for (line in split.sortedWith(compareBy<OcrLine> { it.box.top }.thenBy { if (page.rightFirst) -it.box.right else it.box.left }).take(320)) {
         val matching = groups.asReversed().firstOrNull { g ->
-            g.size < 8 && g.any { canGroup(it, line) } && !g.any { a ->
+            if (g.size >= 8) return@firstOrNull false
+            val previous = g.last()
+            val usual = g.any { canGroup(it, line) }
+            val neighboring = page.comic && comicNeighbors(previous, line)
+            val interior = if (neighboring || usual && page.comic && !line.vertical) sameInterior?.invoke(previous.box, line.box) else null
+            (neighboring && interior == true || usual && interior != false) && !g.any { a ->
                 val combined = a.box.union(line.box)
                 protected.any { it.overlaps(combined) }
             }
@@ -74,7 +82,7 @@ private fun splitMenuLine(line: OcrLine, protected: MutableList<Box>): List<OcrL
         if (parts.isEmpty()) return
         val candidate = parts.joinToString(" ") { it.text }
         val box = parts.map { it.box }.reduce(Box::union)
-        if (isNumeric(candidate)) protected += box
+        if (isNumeric(candidate) || isProtectedImageLiteral(candidate)) protected += box
         else result += line.copy(text = candidate, box = box, words = parts.toList())
         parts.clear()
     }

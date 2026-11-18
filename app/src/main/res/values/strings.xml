@@ -70,7 +70,7 @@
     <string name="privacy_intro">No sign-in. No Sipan server. No ads.</string>
     <string name="privacy_body">Your bookmarks, browser history and translation cache are stored on this device. On-device search does not send your query anywhere. Web search opens the public Brave Search page, so Brave receives your query like any website you visit. Sipan does not add Brave search results pages to its History list. If you add a page to the on-device index, an excerpt is saved locally.\n\nSipan only scans for translation after you tap Start. Google receives the text to translate. With on-device OCR, image pixels stay on your device. With optional Cloud Vision, Google also receives the image.\n\nPrivate tabs use isolated cookies, skip browsing history and translation disk caches, and delete their profiles when closed. Their address bar searches locally, but you can explicitly open web results. Private browsing does not hide requests from websites, your network or translation providers.</string>
     <string name="about">About Sipan</string>
-    <string name="about_body">A browser for readers. Made to bring manga, manhwa, menus and the open web into your language.\n\nWeb engine: Android System WebView\nWeb search: Brave Search\nTranslation: Google Translate\nOn-device text recognition: Google ML Kit\nArabic-script font: Noto Naskh Arabic (SIL Open Font License)</string>
+    <string name="about_body">A browser for readers. Made to bring manga, manhwa, menus and the open web into your language.\n\nWeb engine: Android System WebView\nWeb search: Brave Search\nTranslation: Google Translate\nOn-device text recognition: Google ML Kit; PP-OCRv6 Tiny (Apache 2.0) / ONNX Runtime\nArabic-script font: Noto Naskh Arabic (SIL Open Font License)</string>
     <string name="clear_cache">Clear browser and translation caches</string>
     <string name="cache_cleared">Caches cleared</string>
     <string name="clear_history">Clear history</string>
@@ -106,8 +106,9 @@
     <string name="key_field">API key</string>
     <string name="key_help">Restrict your key to its Google API. Cloud usage can be billed. The key is encrypted on this device.</string>
     <string name="save">Save</string>
-    <string name="ocr_script">Image text script</string>
+    <string name="ocr_script">Image text language or script</string>
     <string name="automatic">Auto-detect</string>
+    <string name="english_comics">English comics</string>
     <string name="latin">Latin</string>
     <string name="japanese">Japanese</string>
     <string name="korean">Korean</string>
@@ -170,7 +171,7 @@
     <string name="clear_search_index_body">Removes indexed page text. Keeps bookmarks and history.</string>
     <string name="search_index_cleared">Pages added to search were removed</string>
     <string name="enhanced_ocr">Enhanced image OCR</string>
-    <string name="enhanced_ocr_detail">A second look for small or faded print. Uses more processing on difficult images.</string>
+    <string name="enhanced_ocr_detail">An extra pass for English comics and small or faded text in Automatic mode. Uses more processing on difficult images.</string>
     <string name="address_device">Enter a link or search this device</string>
     <string name="address_web">Enter a link or search with Brave</string>
     <string name="search_choose_title">Where do you want to search?</string>

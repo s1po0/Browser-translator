@@ -119,7 +119,7 @@ internal class MlKitOcrProvider : OcrProvider, AutoCloseable {
             }
         }
         val dominant = explicit ?: votes.maxByOrNull { it.value }?.key ?: suggested
-        OcrPage(output, dominant == Script.JAPANESE || dominant == Script.CHINESE, retries)
+        OcrPage(output, dominant == Script.JAPANESE || dominant == Script.CHINESE, retries, script = dominant)
     }
 
     private suspend fun recoverTile(input: Bitmap, normal: Bitmap, script: Script, block: Int): List<OcrLine> {
@@ -156,7 +156,7 @@ internal class MlKitOcrProvider : OcrProvider, AutoCloseable {
     override fun close() = synchronized(lock) { closed = true; clients.values.forEach { it.close() }; clients.clear() }
 }
 
-private fun scriptOf(code: String): Script? = when (code.lowercase(Locale.ROOT).substringBefore('-').substringBefore('_')) {
+private fun scriptOf(code: String): Script? = when (if (code == ENGLISH_COMIC_SCRIPT) "latin" else code.lowercase(Locale.ROOT).substringBefore('-').substringBefore('_')) {
     "ja" -> Script.JAPANESE
     "ko" -> Script.KOREAN
     "zh", "yue" -> Script.CHINESE
@@ -176,7 +176,7 @@ internal class CloudVisionOcrProvider(private val key: String) : OcrProvider {
         val feature = JSONObject().put("type", "DOCUMENT_TEXT_DETECTION")
         val input = JSONObject().put("image", JSONObject().put("content", Base64.encodeToString(bytes, Base64.NO_WRAP)))
             .put("features", JSONArray().put(feature))
-        val hints = when (hint.explicit) { "ja", "ko", "zh" -> hint.explicit; "devanagari" -> "hi"; else -> null }
+        val hints = when (hint.explicit) { "ja", "ko", "zh" -> hint.explicit; "devanagari" -> "hi"; ENGLISH_COMIC_SCRIPT -> "en"; else -> null }
         if (hints != null) input.put("imageContext", JSONObject().put("languageHints", JSONArray().put(hints)))
         val request = Request.Builder().url("https://vision.googleapis.com/v1/images:annotate").header("X-Goog-Api-Key", key)
             .post(JSONObject().put("requests", JSONArray().put(input)).toString().toRequestBody(jsonMediaType)).build()

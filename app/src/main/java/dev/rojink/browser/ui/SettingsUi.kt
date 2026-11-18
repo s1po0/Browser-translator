@@ -23,6 +23,7 @@ import dev.rojink.browser.data.ApiKey
 import dev.rojink.browser.data.Bookmark
 import dev.rojink.browser.data.BrowserSettings
 import dev.rojink.browser.search.AddressSearchMode
+import dev.rojink.browser.translation.ENGLISH_COMIC_SCRIPT
 import dev.rojink.browser.web.Browser
 import kotlin.math.roundToInt
 
@@ -109,8 +110,9 @@ import kotlin.math.roundToInt
     }
 }
 
-@Composable internal fun ocrChoices() = listOf("auto" to tr(R.string.automatic), "ja" to tr(R.string.japanese), "ko" to tr(R.string.korean),
-    "zh" to tr(R.string.chinese), "latin" to tr(R.string.latin), "devanagari" to tr(R.string.devanagari))
+@Composable internal fun ocrChoices() = listOf("auto" to tr(R.string.automatic), ENGLISH_COMIC_SCRIPT to tr(R.string.english_comics),
+    "ja" to tr(R.string.japanese), "ko" to tr(R.string.korean), "zh" to tr(R.string.chinese),
+    "latin" to tr(R.string.latin), "devanagari" to tr(R.string.devanagari))
 
 @Composable private fun Section(id: Int) {
     Text(tr(id), Modifier.padding(start = 14.dp, top = 20.dp, bottom = 8.dp), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)

@@ -36,7 +36,7 @@ private const val latin = "A-Za-zÀ-ÖØ-öø-ÿĀ-ž"
 private val latinWord = Regex("(?<![\\p{L}\\p{Nd}_])[$latin]+(?:[’'–-][$latin]+)*(?![\\p{L}\\p{Nd}_])")
 private val phrase = Regex("(?<![\\p{L}\\p{Nd}])(?:${names.keys.filter { ' ' in it }.sortedByDescending(String::length).joinToString("|") { Regex.escape(it) }})(?![\\p{L}\\p{Nd}])", RegexOption.IGNORE_CASE)
 private const val currency = "USD|EUR|IQD|JPY|KRW|CNY|SAR|GBP|AED|CAD|AUD|CHF|NZD|TRY|INR|SEK|NOK|DKK|KWD|QAR|BHD|OMR|IRR"
-private val keepOriginal = Regex("""
+internal val keepOriginal = Regex("""
     `[^`\r\n]*`|(?:[A-Za-z][A-Za-z0-9+.-]*://|www\.|mailto:|tel:)[^\s<>]+|(?<![\p{L}\d])(?:(?:$currency)\s*\p{Nd}[\p{Nd}.,٬٫]*|\p{Nd}[\p{Nd}.,٬٫]*\s*(?:$currency))(?![\p{L}\d])|[\p{L}\d._%+-]+@[\p{L}\d.-]+\.[\p{L}]{2,}|(?<![\p{L}\d])(?:[\p{L}\d-]+\.)+[A-Za-z]{2,63}(?:[/#?][^\s<>]*)?|(?<![\p{L}\d])[@#][\p{L}\d_.-]+|(?<![\p{L}\d])(?:[$latin\d]+_[$latin\d_]+|(?=[$latin\d_.:-]*\d)[$latin\d]+(?:[_.:-][$latin\d]+)+)(?=[\s,;!?)]|$)
 """.trimIndent())
 private val acronyms = setOf("api", "apk", "html", "https", "http", "url", "ocr", "pdf", "css", "json", "xml", "zip", "usb", "isbn",

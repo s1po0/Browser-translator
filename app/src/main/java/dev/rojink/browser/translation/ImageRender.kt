@@ -22,8 +22,9 @@ private val naskhTargets = setOf("ckb", "ar", "fa", "ps", "ur", "sd", "ug", "ks"
 internal class ImageRenderer(private val context: Context) {
     private val naskh by lazy { ResourcesCompat.getFont(context, R.font.noto_naskh_arabic) ?: Typeface.DEFAULT }
 
-    fun paint(bitmap: Bitmap, units: List<TextUnit>, translated: List<String>, protected: List<Box>, target: String): Int {
+    fun paint(bitmap: Bitmap, units: List<TextUnit>, translated: List<String>, protected: List<Box>, target: String, comic: Boolean = false): Int {
         val canvas = Canvas(bitmap)
+        val surface = ComicSurface(bitmap).takeIf { comic }
         var count = 0
         units.zip(translated).forEachIndexed { index, (unit, value) ->
             if (value.isBlank() || value.trim() == unit.text.trim()) return@forEachIndexed
@@ -32,7 +33,8 @@ internal class ImageRenderer(private val context: Context) {
             val avoid = protected + units.mapIndexedNotNull { i, other -> other.box.takeIf { i != index } }
             val margin = (unit.sizeHint * .29f).roundToInt().coerceIn(2, 18)
             val roomy = original.expand(if (unit.vertical) margin * 2 else margin, margin).clip(bitmap.width, bitmap.height)
-            val drawBox = if (avoid.any { roomy.overlaps(it) && !original.overlaps(it) }) original else roomy
+            val drawBox = if (surface != null && !unit.vertical) surface.fitRoom(original, unit.lines, unit.sizeHint, avoid) ?: original
+                else if (avoid.any { roomy.overlaps(it) && !original.overlaps(it) }) original else roomy
             val rtl = target in rtlTargets
             val paint = TextPaint(Paint.ANTI_ALIAS_FLAG or Paint.SUBPIXEL_TEXT_FLAG).apply {
                 typeface = if (target in naskhTargets) naskh else Typeface.create("sans-serif", Typeface.NORMAL)

@@ -17,6 +17,19 @@ jobs:
   reader:
     runs-on: ubuntu-latest
     timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: all-4k
+            target: google_apis
+            page_size: 4096
+            test_args: ""
+          - name: english-16k
+            target: google_apis_ps16k
+            page_size: 16384
+            test_args: -Pandroid.testInstrumentationRunnerArguments.class=dev.rojink.browser.translation.EnglishComicSmokeTest
+    name: Reader (${{ matrix.name }})
     steps:
       - uses: actions/checkout@v6
         with:
@@ -42,7 +55,7 @@ jobs:
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
-          target: google_apis
+          target: ${{ matrix.target }}
           arch: x86_64
           profile: pixel_6
           heap-size: 512M
@@ -51,10 +64,11 @@ jobs:
             adb shell input keyevent KEYCODE_WAKEUP
             adb shell svc power stayon true
             adb shell wm dismiss-keyguard
-            tools/ci-gradle.sh :app:connectedDebugAndroidTest
+            test "$(adb shell getconf PAGE_SIZE | tr -d '\r')" = '${{ matrix.page_size }}'
+            tools/ci-gradle.sh :app:connectedDebugAndroidTest ${{ matrix.test_args }}
       - uses: actions/upload-artifact@v6
         if: always()
         with:
-          name: android-smoke-results
+          name: android-smoke-results-${{ matrix.name }}
           path: app/build/outputs/androidTest-results/connected/
           if-no-files-found: ignore

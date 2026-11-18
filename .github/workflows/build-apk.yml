@@ -44,8 +44,10 @@ jobs:
           npm test --prefix tools/browser-tests
       - name: Test and assemble debug APK
         run: tools/ci-gradle.sh :app:testDebugUnitTest :app:assembleDebug
-      - name: Stage debug APK
-        run: install -D -m 0644 app/build/outputs/apk/debug/app-debug.apk build/apk/translating-browser-debug.apk
+      - name: Stage debug APK and check native OCR packaging
+        run: |
+          install -D -m 0644 app/build/outputs/apk/debug/app-debug.apk build/apk/translating-browser-debug.apk
+          python3 tools/verify-ocr-apk.py build/apk/translating-browser-debug.apk | tee -a "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v7.0.2
         id: debug_apk
         with:
@@ -79,6 +81,7 @@ jobs:
           tools/ci-gradle.sh -ProjinkVersionCode="$releaseVersion" :app:assembleRelease
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs app/build/outputs/apk/release/app-release.apk
           install -D -m 0644 app/build/outputs/apk/release/app-release.apk build/apk/sipan-signed-release.apk
+          python3 tools/verify-ocr-apk.py build/apk/sipan-signed-release.apk | tee -a "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v7.0.2
         id: signed_apk
         if: env.SIGN_APK == 'true'

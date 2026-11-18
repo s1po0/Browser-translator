@@ -106,7 +106,7 @@ private fun InetAddress.isPublicMediaAddress(): Boolean {
 
 internal class ImagePipeline(private val context: Context) : PageImageProcessor, AutoCloseable {
     private val slots = imageSlots(context)
-    private val onDevice = MlKitOcrProvider()
+    private val onDevice = OnDeviceImageOcr(context)
     private val loader = MediaLoader(context)
     private val renderer = ImageRenderer(context)
     private val cache = ImageCache(File(context.cacheDir, "translated-images"))
@@ -136,24 +136,29 @@ internal class ImagePipeline(private val context: Context) : PageImageProcessor,
         val hint = OcrHint(options.script, language, options.enhancedOcr)
         val vision = providers.visionKey
         val key = if (save) withContext(Dispatchers.Default) {
-            val langHint = if (options.script == "auto") language.lowercase().take(16) else "explicit"
-            sha256("sipan-image-v2:${sha256(input)}:${options.target}:${options.script}:${options.enhancedOcr}:$langHint:${providers.variant}:${vision != null}".toByteArray())
+            val langHint = language.lowercase().take(16)
+            sha256("sipan-image-v3:${sha256(input)}:${options.target}:${options.script}:${options.enhancedOcr}:$langHint:${providers.variant}:${vision != null}".toByteArray())
         } else null
         if (key != null) cache.get(key)?.let { return it }
         val bitmap = withContext(Dispatchers.Default) { decode(input) }
         try {
             if (bitmap.width < 80 || bitmap.height < 80) return null
-            val recognition = (if (vision != null) CloudVisionOcrProvider(vision) else onDevice).recognize(bitmap, hint)
-            val layout = groupForImage(recognition)
+            val recognized = (if (vision != null) CloudVisionOcrProvider(vision) else onDevice).recognize(bitmap, hint)
+            val comic = recognized.comic || options.script == ENGLISH_COMIC_SCRIPT
+            val layout = withContext(Dispatchers.Default) {
+                val surface = if (comic) ComicSurface(bitmap) else null
+                groupForImage(recognized.copy(comic = comic), surface?.let { it::sameInterior })
+            }
             if (layout.units.isEmpty()) return null
-            val translations = providers.translator.translate(layout.units.map { it.text }, "auto", options.target)
-            if (translations.size != layout.units.size) throw ResponseFailure()
+            val translations = translateImageWords(layout.units, options.target, options.script == ENGLISH_COMIC_SCRIPT,
+                providers.imageTranslator, providers.imageRetry)
             val drawn = withContext(Dispatchers.Default) {
-                renderer.paint(bitmap, layout.units, translations.map { it.take(2000) }, layout.protected, options.target)
+                renderer.paint(bitmap, layout.units, translations.map { it.take(2000) }, layout.protected, options.target, comic)
             }
             if (drawn == 0) return null
             coroutineContext.ensureActive()
-            return if (key != null) cache.put(key, bitmap) else withContext(Dispatchers.Default) {
+            // Partial renders are valid for this session, but don't pin a provider error to the disk cache.
+            return if (key != null && drawn == layout.units.size) cache.put(key, bitmap) else withContext(Dispatchers.Default) {
                 RenderedImage.Memory(ByteArrayOutputStream().use { output ->
                     if (!bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)) throw IOException("Could not render image")
                     output.toByteArray()
