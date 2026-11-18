@@ -12,6 +12,9 @@ private const val LONG_MAX_SCAN_WIDTH = 2048
 internal const val LONG_MAX_WINDOW_PIXELS = 3_200_000
 private const val WINDOW_EDGE = 2080
 private const val WINDOW_CONTEXT = 224
+private const val GUTTER_CONTEXT = 8
+private const val GUTTER_MARGIN = 12
+internal const val LONG_GUTTER_MIN = 96
 internal const val LONG_MAX_UNITS = 320
 
 internal data class RasterSize(val width: Int, val height: Int) {
@@ -59,14 +62,45 @@ internal fun planLongImage(size: RasterSize): LongImagePlan? {
     if (width < 80) return null
     // Derive height from the rounded width so narrow strips don't stretch or collapse in the WebView.
     val output = RasterSize(width, (size.height.toLong() * width / size.width).toInt())
-    val windowHeight = minOf(WINDOW_EDGE, LONG_MAX_WINDOW_PIXELS / scan.width)
-    val count = ceilDivide(scan.height, windowHeight - 2 * WINDOW_CONTEXT)
+    val count = ceilDivide(scan.height, windowHeight(scan) - 2 * WINDOW_CONTEXT)
     val windows = List(count) { n ->
         val from = scan.height * n / count
         val to = scan.height * (n + 1) / count
         StripWindow(from, to, maxOf(0, from - WINDOW_CONTEXT), minOf(scan.height, to + WINDOW_CONTEXT))
     }
     return LongImagePlan(size, sample, scan, output, windows)
+}
+
+private fun windowHeight(scan: RasterSize) = minOf(WINDOW_EDGE, LONG_MAX_WINDOW_PIXELS / scan.width)
+
+/** Put joins in clear gutters when possible, otherwise keep full overlapping context on both sides. */
+internal fun LongImagePlan.windowsAtGutters(gutters: List<IntRange>): List<StripWindow> {
+    val cuts = gutters.flatMap { gap ->
+        if (gap.last - gap.first + 1 < LONG_GUTTER_MIN) emptyList()
+        else listOfNotNull(
+            (gap.first + GUTTER_MARGIN).takeIf { gap.first > 0 },
+            (gap.last + 1 - GUTTER_MARGIN).takeIf { gap.last + 1 < scan.height },
+        )
+    }.sorted()
+    if (cuts.isEmpty()) return windows
+    val result = mutableListOf<StripWindow>()
+    var from = 0
+    var context = 0
+    while (from < scan.height) {
+        if (result.size >= windows.size * 2) return windows
+        val top = maxOf(0, from - context)
+        val limit = top + windowHeight(scan)
+        val quiet = cuts.lastOrNull { it > from && it <= limit - GUTTER_CONTEXT }
+        val (to, nextContext) = when {
+            limit >= scan.height -> scan.height to 0
+            quiet != null -> quiet to GUTTER_CONTEXT
+            else -> limit - WINDOW_CONTEXT to WINDOW_CONTEXT
+        }
+        result += StripWindow(from, to, top, minOf(scan.height, to + nextContext))
+        from = to
+        context = nextContext
+    }
+    return result
 }
 
 internal fun TextUnit.movedY(dy: Int) = copy(box = box.moved(0, dy), lines = lines.map { it.moved(0, dy) })

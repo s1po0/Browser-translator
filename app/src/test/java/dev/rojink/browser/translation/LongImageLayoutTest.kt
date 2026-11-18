@@ -30,6 +30,22 @@ class LongImageLayoutTest {
         assertEquals(huge.scan.height, huge.windows.last().coreBottom)
     }
 
+    @Test fun `keeps content islands whole when wide enough gutters bracket them`() {
+        val plan = requireNotNull(planLongImage(RasterSize(1440, 12288)))
+        val starts = listOf(0, 3504, 7704)
+        val ends = starts.map { it + 2016 }
+        val gutters = ends.zip(starts.drop(1) + plan.scan.height).map { (from, to) -> from until to }
+        val windows = plan.windowsAtGutters(gutters)
+        for ((top, bottom) in starts.zip(ends)) {
+            assertEquals(1, windows.count { it.top <= top && it.bottom >= bottom })
+        }
+        assertEquals(0, windows.first().coreTop)
+        assertEquals(plan.scan.height, windows.last().coreBottom)
+        assertTrue(windows.zipWithNext().all { (a, b) -> a.coreBottom == b.coreTop && a.bottom >= b.top })
+        assertTrue(windows.all { it.height * plan.scan.width <= LONG_MAX_WINDOW_PIXELS && it.height <= 2080 })
+        assertEquals(plan.windows, plan.windowsAtGutters(emptyList()))
+    }
+
     @Test fun `overlap chooses the complete bubble and not duplicates of separate neighboring dialogue`() {
         val upper = Box(31, 1434, 115, 1454)
         val lower = Box(22, 1462, 126, 1483)

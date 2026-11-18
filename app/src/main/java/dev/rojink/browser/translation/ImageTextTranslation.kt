@@ -13,14 +13,17 @@ import java.util.concurrent.ConcurrentHashMap
 private const val number = "\\p{Nd}+(?:[.,٬٫]\\p{Nd}+)*"
 private val price = Regex("(?<![\\p{L}\\p{Nd}])(?:[\\p{Sc}]\\s*$number|$number\\s*[\\p{Sc}%٪])(?![\\p{L}\\p{Nd}])")
 private val serial = Regex("(?<![\\p{L}\\p{Nd}_])[A-Z]{2,10}[0-9]{2,12}(?![\\p{L}\\p{Nd}_])")
+// OCR can drop one slash or add a space to an otherwise clear printed URL. Never erase or repair its pixels.
+private val printedUrl = Regex("""(?<![\p{L}\p{Nd}])https?\s*:\s*/{1,2}\s*(?:[\p{L}\p{Nd}-]+\.)+[\p{L}]{2,63}(?:[/#?][^\s<>]*)?""",
+    RegexOption.IGNORE_CASE)
 
 /** Do not substitute/erase literal labels. For mixed strings, reject translations that change any literal. */
 internal fun isProtectedImageLiteral(text: String): Boolean = text.trim().let {
-    keepOriginal.matches(it) || price.matches(it) || serial.matches(it)
+    keepOriginal.matches(it) || printedUrl.matches(it) || price.matches(it) || serial.matches(it)
 }
 
 internal fun imageLiteralSpans(text: String): List<String> {
-    val candidates = (keepOriginal.findAll(text) + price.findAll(text) + serial.findAll(text)).sortedWith(
+    val candidates = (keepOriginal.findAll(text) + printedUrl.findAll(text) + price.findAll(text) + serial.findAll(text)).sortedWith(
         compareBy<MatchResult> { it.range.first }.thenByDescending { it.value.length },
     )
     var last = -1

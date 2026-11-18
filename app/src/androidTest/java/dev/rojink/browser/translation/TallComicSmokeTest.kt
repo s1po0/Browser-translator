@@ -44,6 +44,35 @@ class TallComicSmokeTest {
         } finally { panel.recycle() }
     }
 
+    @Test fun overlappingWindowsWithoutGuttersSendOneWholeReadingPerBubble() = runBlocking {
+        withTimeout(75_000) {
+            val panel = instrumentation.context.assets.open("en-comic.png").use { BitmapFactory.decodeStream(it) }
+            val height = 5700
+            val plan = requireNotNull(planLongImage(RasterSize(panel.width, height)))
+            // The first line sits on a core join; the second bubble is clipped in the earlier window.
+            val top = plan.windows.first().coreBottom - 153
+            val input = try { comicStrip(panel, height, intArrayOf(top), continuous = true) } finally { panel.recycle() }
+            val seen = mutableListOf<String>()
+            val decisions = mutableListOf<PaintDecision>()
+            val mock = object : TranslationProvider {
+                override suspend fun translate(texts: List<String>, source: String, target: String): List<String> {
+                    seen += texts
+                    return texts.map { "لەوێ چاوەڕێ بکە." }
+                }
+            }
+            ImagePipeline(instrumentation.targetContext, paintDecision = { _, decision -> decisions += decision }).use { pipeline ->
+                val output = pipeline.gallery(input, options, ReaderProviders(mock, "seam-fixture", null), incognito = true)
+                try {
+                    val expected = listOf("MY AIM WAS OFF, AND I LOST FOCUS AFTER I TOOK A LONG BREAK.", "YOU CAN TRY AGAIN TOMORROW.")
+                    Log.i("SipanComicSmoke", "Continuous strip join at ${plan.windows.first().coreBottom}: whole bubbles ${seen.count { letters(it) in expected.map(::letters) }}/2, paint=$decisions")
+                    assertEquals("One whole reading per bubble at a non-gutter seam: $seen", expected.map(::letters), seen.map(::letters))
+                    assertEquals(listOf(PaintDecision.DRAWN, PaintDecision.DRAWN), decisions)
+                    assertNotNull(output.bitmap)
+                } finally { output.bitmap?.recycle() }
+            }
+        }
+    }
+
     @Test fun compareIdenticalLetteringAloneAndInTallStrips() = runBlocking {
         withTimeout(135_000) {
             val short = instrumentation.context.assets.open("en-comic-coverage.png").use { it.readBytes() }
@@ -133,11 +162,12 @@ class TallComicSmokeTest {
     private fun letters(text: String) = text.uppercase().filter(Char::isLetterOrDigit)
 }
 
-internal fun comicStrip(panel: Bitmap, height: Int, tops: IntArray): ByteArray {
+internal fun comicStrip(panel: Bitmap, height: Int, tops: IntArray, continuous: Boolean = false): ByteArray {
     val bitmap = Bitmap.createBitmap(panel.width, height, Bitmap.Config.ARGB_8888)
     return try {
         bitmap.eraseColor(0xFF728091.toInt())
         val canvas = Canvas(bitmap)
+        if (continuous) canvas.drawRect((panel.width / 2).toFloat(), 0f, panel.width.toFloat(), height.toFloat(), Paint().apply { color = 0xFF657787.toInt() })
         for (top in tops) canvas.drawBitmap(panel, null, Rect(0, top, panel.width, top + panel.height), null)
         ByteArrayOutputStream().use { out ->
             assertTrue(bitmap.compress(Bitmap.CompressFormat.PNG, 100, out))

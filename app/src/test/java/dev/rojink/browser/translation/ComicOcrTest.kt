@@ -72,6 +72,14 @@ class ComicOcrTest {
         assertEquals(lines.takeLast(2).map { it.box }, layout.protected)
     }
 
+    @Test fun `protects a printed URL even if OCR drops a slash`() {
+        for (url in listOf("https:/example.com", "HTTPS: /EXAMPLE.COM/help")) {
+            assertTrue(isProtectedImageLiteral(url))
+            assertEquals(listOf(url), imageLiteralSpans("Open $url now"))
+            assertFalse(validImageTranslation("Open $url now", "لینکەکە بکەرەوە", "en", "ckb"))
+        }
+    }
+
     @Test fun `Sorani fallback retries the whole unit and leaves bad results in the original pixels`() = runBlocking {
         val dialogue = "MY AIM WAS OFF, AND I LOST FOCUS AFTER I TOOK A LONG BREAK."
         val inputs = listOf(dialogue, "YOU", "Open https://example.com now")
