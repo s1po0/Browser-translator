@@ -35,25 +35,61 @@ private val regions = setOf("AR", "AU", "AT", "BE", "BR", "CA", "CL", "CN", "DK"
 internal fun hasBraveRegion(country: String): Boolean = country in regions
 internal fun countryDomain(country: String): String = if (country == "GB") "uk" else country.lowercase(Locale.ROOT)
 
-internal const val SEARCH_QUERY_LIMIT = 300
-private const val SCOPED_QUERY_LIMIT = SEARCH_QUERY_LIMIT + 8 // Space + site: + two-letter domain.
+internal enum class WebSearchCategory(val path: String) {
+    WEB("/search"), IMAGES("/images"), NEWS("/news"), VIDEOS("/videos");
 
-internal fun searchQuery(input: String): String = bounded(input, SEARCH_QUERY_LIMIT)
-
-private fun bounded(input: String, limit: Int): String = input.trim().take(limit).let {
-    if (it.lastOrNull()?.isHighSurrogate() == true) it.dropLast(1).trimEnd() else it
+    val supportsRefinements: Boolean get() = this == WEB
 }
+
+internal enum class SearchFreshness(val braveValue: String?) {
+    ANY(null), DAY("pd"), WEEK("pw"), MONTH("pm"), YEAR("py")
+}
+
+/** Per-query tools; unlike country and Safe Search, these do not become defaults. */
+internal data class WebRefinements(
+    val freshness: SearchFreshness = SearchFreshness.ANY,
+    val exactPhrase: Boolean = false,
+    val pdfs: Boolean = false,
+)
+
+internal data class WebSearchRequest(
+    val query: String,
+    val category: WebSearchCategory = WebSearchCategory.WEB,
+    val refinements: WebRefinements = WebRefinements(),
+) {
+    fun inCategory(target: WebSearchCategory) = copy(
+        category = target, refinements = if (target.supportsRefinements) refinements else WebRefinements(),
+    )
+}
+
+internal const val SEARCH_QUERY_LIMIT = 300
+private const val BRAVE_QUERY_LIMIT = SEARCH_QUERY_LIMIT + 23 // Quotes, " filetype:pdf" and " site:xx".
+
+// Keep a trailing space while editing; trimming here would make it impossible to type a second word.
+internal fun searchDraft(input: String): String = input.take(SEARCH_QUERY_LIMIT).withoutTrailingHighSurrogate()
+internal fun searchQuery(input: String): String = searchDraft(input.trim()).trimEnd()
+
+private fun String.withoutTrailingHighSurrogate(): String =
+    if (lastOrNull()?.isHighSurrogate() == true) dropLast(1) else this
 
 internal const val BRAVE_SEARCH_ORIGIN = "https://search.brave.com/"
 private val braveSearch = BRAVE_SEARCH_ORIGIN.toHttpUrl()
-private val resultsPaths = setOf("/search", "/images", "/news", "/videos")
 
-/** Open Brave's public results page, not the paid API. Region and Safe Search are site preferences (cookies). */
-internal fun braveSearchUrl(input: String, filters: WebSearchFilters = WebSearchFilters(), path: String = "/search"): String? {
-    val term = searchQuery(input).takeIf(String::isNotBlank) ?: return null
-    val query = filters.domainFilter?.let { domain -> "$term site:$domain" } ?: term
-    return braveSearch.newBuilder().encodedPath(path.takeIf { it in resultsPaths } ?: "/search")
-        .addQueryParameter("q", query).build().toString()
+/** Brave's public results page, not the API. Region and Safe Search remain site preferences (cookies). */
+internal fun braveSearchUrl(request: WebSearchRequest, filters: WebSearchFilters = WebSearchFilters()): String? {
+    val term = searchQuery(request.query).takeIf(String::isNotBlank) ?: return null
+    val tools = if (request.category.supportsRefinements) request.refinements else WebRefinements()
+    // Inner double quotes would end the exact phrase early. Leave ordinary typed queries untouched.
+    val phrase = if (tools.exactPhrase) term.replace('"', ' ').trim().takeIf(String::isNotEmpty) else null
+    val query = buildString {
+        append(if (phrase != null) "\"$phrase\"" else term)
+        if (tools.pdfs) append(" filetype:pdf")
+        filters.domainFilter?.let { append(" site:").append(it) }
+    }
+    return braveSearch.newBuilder().encodedPath(request.category.path).addQueryParameter("q", query).apply {
+        tools.freshness.braveValue?.let { addQueryParameter("tf", it) }
+        if (phrase != null) addQueryParameter("spellcheck", "0")
+    }.build().toString()
 }
 
 /** Fixed cookie names and validated values only; no search terms, location coordinates, or identifiers. */
@@ -63,10 +99,40 @@ internal fun braveSearchCookies(filters: WebSearchFilters): List<String> {
         .map { "$it; Path=/; Secure; SameSite=Lax" }
 }
 
-private fun braveResultsUrl(address: String?) = webUrl(address)
-    ?.takeIf { it.isHttps && it.host == braveSearch.host && it.port == braveSearch.port && it.encodedPath in resultsPaths }
+internal fun braveResults(address: String?): WebSearchRequest? {
+    val url = webUrl(address)?.takeIf { it.isHttps && it.host == braveSearch.host && it.port == braveSearch.port } ?: return null
+    val category = WebSearchCategory.entries.firstOrNull { it.path == url.encodedPath } ?: return null
+    val query = url.queryParameter("q")?.trim()?.take(BRAVE_QUERY_LIMIT)?.withoutTrailingHighSurrogate()
+        ?.takeIf(String::isNotBlank) ?: return null
+    val date = if (category.supportsRefinements) url.queryParameter("tf") else null
+    val freshness = SearchFreshness.entries.firstOrNull { it.braveValue == date } ?: SearchFreshness.ANY
+    return WebSearchRequest(query, category, WebRefinements(freshness))
+}
 
-internal fun braveResultsQuery(address: String?): String? = braveResultsUrl(address)
-    ?.queryParameter("q")?.let { bounded(it, SCOPED_QUERY_LIMIT) }?.takeIf(String::isNotBlank)
+/** Tab-lifetime, bounded record of app-added query operators. Never strips operators a user typed. */
+internal class WebSearchTrail {
+    private data class Original(val input: String, val tools: WebRefinements)
 
-internal fun braveResultsPath(address: String?): String = braveResultsUrl(address)?.encodedPath ?: "/search"
+    private val decorated = LinkedHashMap<String, Original>()
+
+    fun record(address: String, request: WebSearchRequest) {
+        val sent = braveResults(address) ?: return
+        val input = searchQuery(request.query)
+        decorated.remove(sent.query)
+        if (sent.query != input) {
+            decorated[sent.query] = Original(input, request.inCategory(sent.category).refinements)
+            if (decorated.size > 16) decorated.remove(decorated.keys.first())
+        }
+    }
+
+    fun read(address: String?): WebSearchRequest? {
+        val page = braveResults(address) ?: return null
+        val original = decorated[page.query]
+        val refinements = if (original != null && page.category.supportsRefinements) {
+            original.tools.copy(freshness = page.refinements.freshness)
+        } else page.refinements
+        return page.copy(query = original?.input ?: searchQuery(page.query), refinements = refinements)
+    }
+
+    fun clear() = decorated.clear()
+}

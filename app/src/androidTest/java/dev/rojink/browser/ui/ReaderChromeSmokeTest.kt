@@ -13,6 +13,7 @@ import dev.rojink.browser.RojInkApp
 import dev.rojink.browser.search.AddressSearchMode
 import dev.rojink.browser.search.WebSafeSearch
 import dev.rojink.browser.search.WebSearchFilters
+import dev.rojink.browser.search.WebSearchRequest
 import dev.rojink.browser.search.braveSearchUrl
 import dev.rojink.browser.web.BrowserTab
 import dev.rojink.browser.web.DocumentFeatures
@@ -23,6 +24,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.util.concurrent.CopyOnWriteArrayList
 
 @RunWith(AndroidJUnit4::class)
 class ReaderChromeSmokeTest {
@@ -82,7 +84,7 @@ class ReaderChromeSmokeTest {
         compose.onNodeWithTag("sipan-web-context").assertDoesNotExist()
         filters.assert(hasText("Iraq (.iq) · Safe Search: Off"))
         compose.onNodeWithTag("sipan-web-search-once").performClick()
-        awaitAddress(braveSearchUrl("Erbil", expected)!!)
+        awaitAddress(braveSearchUrl(WebSearchRequest("Erbil"), expected)!!)
 
         // Reapplying in the results header removes the previous domain operator rather than stacking it.
         filters.performClick()
@@ -92,10 +94,62 @@ class ReaderChromeSmokeTest {
         compose.onNodeWithTag("sipan-apply-filters").performClick()
         val worldwide = expected.copy(country = null, safeSearch = WebSafeSearch.STRICT)
         runBlocking { withTimeout(8_000) { store.values.first { it.webSearchFilters == worldwide } } }
-        awaitAddress(braveSearchUrl("Erbil", worldwide)!!, exact = true)
+        awaitAddress(braveSearchUrl(WebSearchRequest("Erbil"), worldwide)!!, exact = true)
         compose.onNodeWithTag("sipan-device-search").performClick()
         compose.onNodeWithTag("sipan-query").assertTextContains("Erbil")
         assertTrue(runBlocking { store.values.first() }.addressSearch == AddressSearchMode.DEVICE)
+    }
+
+    @Test fun nativeSearchCategoriesAndLocalMatchesDoNotSendUnsubmittedText() = withAddressSearch(AddressSearchMode.DEVICE) { requests ->
+        compose.onNodeWithTag("sipan-open-search").assertIsDisplayed().performClick()
+        compose.onNodeWithTag("sipan-scope-web").assertIsSelected()
+        val query = compose.onNodeWithTag("sipan-query")
+        query.performTextInput("Erbil citadel")
+        compose.onNodeWithTag("sipan-scope-images").performClick().assertIsSelected()
+        compose.onNodeWithTag("sipan-web-context").assertDoesNotExist()
+        assertTrue("Typing and choosing a category do not send a query", requests.isEmpty())
+
+        compose.onNodeWithTag("sipan-web-search-once").performClick()
+        awaitAddress("https://search.brave.com/images?q=Erbil%20citadel", exact = true)
+        compose.onNodeWithTag("sipan-result-images").assertIsSelected()
+        compose.onNodeWithTag("sipan-result-news").performClick()
+        awaitAddress("https://search.brave.com/news?q=Erbil%20citadel", exact = true)
+        compose.onNodeWithTag("sipan-result-videos").performClick()
+        val videos = "https://search.brave.com/videos?q=Erbil%20citadel"
+        awaitAddress(videos, exact = true)
+        compose.waitUntil(8_000) { videos in requests }
+        val submitted = requests.toList()
+
+        compose.onNodeWithTag("sipan-edit-search").performClick()
+        compose.onNodeWithTag("sipan-scope-videos").assertIsSelected()
+        query.assertTextContains("Erbil citadel")
+        compose.onNodeWithTag("sipan-scope-device").performScrollTo().performClick().assertIsSelected()
+        query.performClick().performTextReplacement("PaddleOCR")
+        // Matched from the local index while typing, without an IME action or a network request.
+        compose.waitUntil(8_000) { compose.onAllNodes(hasText("PaddleOCR · GitHub")).fetchSemanticsNodes().isNotEmpty() }
+        assertTrue(requests.toList() == submitted)
+    }
+
+    @Test fun webSearchToolsSurviveEditingAndDoNotLeakIntoImages() = withAddressSearch(AddressSearchMode.DEVICE) { requests ->
+        compose.onNodeWithTag("sipan-open-search").performClick()
+        val query = compose.onNodeWithTag("sipan-query")
+        query.performTextInput("Erbil Citadel")
+        val tools = compose.onNodeWithTag("sipan-search-tools")
+        tools.performScrollTo().performClick()
+        compose.onNodeWithTag("sipan-date-week").performClick()
+        compose.onNodeWithTag("sipan-exact-phrase").performScrollTo().performClick()
+        compose.onNodeWithTag("sipan-pdf").performScrollTo().performClick()
+        compose.onNodeWithTag("sipan-apply-search-tools").performClick()
+        assertTrue("Applying tools to a draft does not submit the search", requests.isEmpty())
+        compose.onNodeWithTag("sipan-web-search-once").performScrollTo().performClick()
+        awaitAddress("https://search.brave.com/search?q=%22Erbil%20Citadel%22%20filetype%3Apdf&tf=pw&spellcheck=0", exact = true)
+        compose.onNodeWithTag("sipan-edit-search").performClick()
+        query.assertTextContains("Erbil Citadel")
+        tools.assert(hasText("Search tools · Past week · Exact phrase · Find PDFs"))
+        compose.onNodeWithTag("sipan-scope-images").performClick()
+        tools.assertDoesNotExist()
+        compose.onNodeWithTag("sipan-web-search-once").performClick()
+        awaitAddress("https://search.brave.com/images?q=Erbil%20Citadel", exact = true)
     }
 
     private fun awaitAddress(url: String, exact: Boolean = false) {
@@ -103,9 +157,10 @@ class ReaderChromeSmokeTest {
         compose.waitUntil(12_000) { compose.onAllNodes(match).fetchSemanticsNodes().isNotEmpty() }
     }
 
-    private fun withAddressSearch(mode: AddressSearchMode, block: () -> Unit) {
+    private fun withAddressSearch(mode: AddressSearchMode, block: (List<String>) -> Unit) {
         val store = (compose.activity.application as RojInkApp).settings
         val prefs = runBlocking { store.values.first() }
+        val requests = CopyOnWriteArrayList<String>()
         // Keep the navigation tests independent of the public site's redirects, connection and content.
         compose.runOnIdle {
             val browser = compose.activity.browser
@@ -113,6 +168,7 @@ class ReaderChromeSmokeTest {
             browser.features = object : DocumentFeatures by original {
                 override fun intercept(tab: BrowserTab, request: WebResourceRequest): WebResourceResponse? {
                     if (request.url.scheme == "https" && request.url.host == "search.brave.com") {
+                        if (request.isForMainFrame) requests.add(request.url.toString())
                         return WebResourceResponse("text/html", "utf-8", "<!doctype html><title>Search test</title>".byteInputStream())
                     }
                     return original.intercept(tab, request)
@@ -123,7 +179,7 @@ class ReaderChromeSmokeTest {
         try {
             val hint = if (mode == AddressSearchMode.DEVICE) "Enter a link or search this device" else "Enter a link or search"
             compose.waitUntil(8_000) { compose.onAllNodes(hasText(hint)).fetchSemanticsNodes().isNotEmpty() }
-            block()
+            block(requests)
         } finally { runBlocking { store.update { prefs } } }
     }
 

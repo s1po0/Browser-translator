@@ -82,7 +82,7 @@ import dev.rojink.browser.web.webUrl
                 }
             } else {
                 item { ReadingHero(target, onPaste) }
-                item { SearchStarter(onSearch) }
+                item { SearchStarter(onOpen = { onSearch("") }, onSearch = onSearch) }
                 item { Text(tr(R.string.home_tools), Modifier.padding(start = 2.dp, top = 1.dp), style = MaterialTheme.typography.titleMedium) }
                 item {
                     Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(10.dp)) {

@@ -177,7 +177,7 @@
     <string name="search_web_action">Search the web with Brave</string>
     <string name="search_web_action_detail">Find more results online. Brave receives this query when you tap here.</string>
     <string name="search_web_private_detail">Brave receives the query even when you open web results in a private tab.</string>
-    <string name="search_web_provider">Web results · Brave Search</string>
+    <string name="search_web_provider">Results from Brave Search</string>
     <string name="search_web_failed">Web results could not load</string>
     <string name="search_web_failed_detail">Check your connection and try again, or tap On device to search locally.</string>
     <string name="search_setting_web">Web search from the address bar</string>
@@ -205,4 +205,26 @@
     <string name="search_safety_moderate_detail">Brave filters explicit images and videos.</string>
     <string name="search_safety_strict_detail">Brave also filters explicit web results.</string>
     <string name="search_safety_off_detail">Turns off Brave’s adult-content filter. Explicit results may appear. This does not bypass website or network blocks.</string>
+    <string name="search_online_hint">Search the web</string>
+    <string name="search_category_web">Web</string>
+    <string name="search_category_images">Images</string>
+    <string name="search_category_news">News</string>
+    <string name="search_category_videos">Videos</string>
+    <string name="search_edit">Edit search</string>
+    <string name="search_submit_brave">Search with Brave</string>
+    <string name="search_submit_disclosure">Sipan sends the query to Brave when you submit it, not while you type.</string>
+    <string name="search_try_topic">Try a search</string>
+    <string name="search_home_detail">Find web pages, images, news and videos.</string>
+    <string name="search_tools">Search tools</string>
+    <string name="search_tools_summary">Search tools · %1$s</string>
+    <string name="search_date">Result date</string>
+    <string name="search_date_any">Any time</string>
+    <string name="search_date_day">Past 24 hours</string>
+    <string name="search_date_week">Past week</string>
+    <string name="search_date_month">Past month</string>
+    <string name="search_date_year">Past year</string>
+    <string name="search_exact_phrase">Exact phrase</string>
+    <string name="search_exact_phrase_detail">Ask for these words together, in this order.</string>
+    <string name="search_pdfs">Find PDFs</string>
+    <string name="search_tools_detail">These tools are for web results. Brave may broaden your search if too few pages match.</string>
 </resources>

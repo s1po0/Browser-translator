@@ -177,7 +177,7 @@
     <string name="search_web_action">لە وێب بگەڕێ بە Brave</string>
     <string name="search_web_action_detail">ئەنجامی زیاتر لە وێب. کاتێک ئەمە هەڵدەبژێریت، وشەی گەڕان بۆ Brave دەنێردرێت.</string>
     <string name="search_web_private_detail">تەنانەت لە تابی تایبەتیش، ئەگەر گەڕانی وێب هەڵبژێریت، Brave وشەی گەڕان وەردەگرێت.</string>
-    <string name="search_web_provider">ئەنجامی وێب · Brave Search</string>
+    <string name="search_web_provider">ئەنجامەکانی Brave Search</string>
     <string name="search_web_failed">ئەنجامەکانی وێب بار نەبوون</string>
     <string name="search_web_failed_detail">پەیوەندیی ئینتەرنێت بپشکنە و دووبارە هەوڵ بدە، یان «لەسەر ئامێر» هەڵبژێرە.</string>
     <string name="search_setting_web">گەڕانی وێب لە نوارەی ناونیشان</string>
@@ -205,4 +205,26 @@
     <string name="search_safety_moderate_detail">Brave وێنە و ڤیدیۆی ناوەڕۆکی گەورەساڵان فلتەر دەکات.</string>
     <string name="search_safety_strict_detail">Brave ئەنجامەکانی وێب کە ناوەڕۆکی گەورەساڵانن فلتەر دەکات.</string>
     <string name="search_safety_off_detail">فلتەری ناوەڕۆکی گەورەساڵانی Brave ناچالاک دەکات. لەوانەیە ئەو ناوەڕۆکە دەرکەوێت. بلۆکی ماڵپەڕ یان تۆڕ لاناچێت.</string>
+    <string name="search_online_hint">لە وێب بگەڕێ</string>
+    <string name="search_category_web">وێب</string>
+    <string name="search_category_images">وێنە</string>
+    <string name="search_category_news">هەواڵ</string>
+    <string name="search_category_videos">ڤیدیۆ</string>
+    <string name="search_edit">دەستکاریی گەڕان</string>
+    <string name="search_submit_brave">بە Brave بگەڕێ</string>
+    <string name="search_submit_disclosure">سیپان تەنها کاتێک گەڕان دەست پێ دەکەیت وشەکان بۆ Brave دەنێرێت، نەک کاتی نووسین.</string>
+    <string name="search_try_topic">گەڕانێک تاقی بکەرەوە</string>
+    <string name="search_home_detail">پەڕەکانی وێب، وێنە، هەواڵ و ڤیدیۆ بدۆزەوە.</string>
+    <string name="search_tools">ئامرازەکانی گەڕان</string>
+    <string name="search_tools_summary">ئامرازەکانی گەڕان · %1$s</string>
+    <string name="search_date">کاتی ئەنجامەکان</string>
+    <string name="search_date_any">هەر کاتێک</string>
+    <string name="search_date_day">٢٤ کاتژمێری ڕابردوو</string>
+    <string name="search_date_week">هەفتەی ڕابردوو</string>
+    <string name="search_date_month">مانگی ڕابردوو</string>
+    <string name="search_date_year">ساڵی ڕابردوو</string>
+    <string name="search_exact_phrase">دەستەواژەی تەواو</string>
+    <string name="search_exact_phrase_detail">داوای ئەم وشانە بەیەکەوە و بەم ڕیزە بکە.</string>
+    <string name="search_pdfs">دۆزینەوەی فایلی PDF</string>
+    <string name="search_tools_detail">ئەم ئامرازانە بۆ ئەنجامەکانی وێبن. ئەگەر ئەنجام کەم بێت، Brave لەوانەیە سنووری گەڕان فراوان بکات.</string>
 </resources>

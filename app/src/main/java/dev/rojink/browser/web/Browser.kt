@@ -37,10 +37,11 @@ import dev.rojink.browser.data.Visit
 import dev.rojink.browser.data.SearchPage
 import dev.rojink.browser.search.BRAVE_SEARCH_ORIGIN
 import dev.rojink.browser.search.WebSearchFilters
-import dev.rojink.browser.search.braveResultsQuery
+import dev.rojink.browser.search.WebSearchRequest
+import dev.rojink.browser.search.WebSearchTrail
+import dev.rojink.browser.search.braveResults
 import dev.rojink.browser.search.braveSearchCookies
 import dev.rojink.browser.search.braveSearchUrl
-import dev.rojink.browser.search.searchQuery
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -94,10 +95,9 @@ class BrowserTab(val incognito: Boolean) {
         internal set
     @Volatile internal var destroyed = false
     internal var privateSearchFilters by mutableStateOf(WebSearchFilters())
-    // Remembers which operators Sipan appended, not any operators the user typed.
-    internal val originalWebQueries = LinkedHashMap<String, String>()
+    internal val webSearchTrail = WebSearchTrail()
 
-    internal fun displayedWebQuery(): String? = braveResultsQuery(address)?.let { originalWebQueries[it] ?: searchQuery(it) }
+    internal fun displayedWebSearch(): WebSearchRequest? = webSearchTrail.read(address)
 }
 
 interface DocumentFeatures {
@@ -173,7 +173,7 @@ class Browser(
 
     fun select(tab: BrowserTab) {
         if (selected === tab || tab !in tabs) return
-        searchAttempt++
+        cancelPendingSearch()
         closeVideo()
         features.foreground(selected, false)
         selected.view?.onPause()
@@ -202,13 +202,13 @@ class Browser(
     }
 
     /** Called on the main thread after a submitted web search or applying filters to a results page. */
-    internal suspend fun searchWeb(input: String, filters: WebSearchFilters, path: String = "/search"): Boolean {
-        val address = braveSearchUrl(input, filters, path) ?: return false
+    internal suspend fun searchWeb(request: WebSearchRequest, filters: WebSearchFilters): Boolean {
+        val address = braveSearchUrl(request, filters) ?: return false
         val tab = selected
         val view = ensureView(tab) ?: return false
         val attempt = ++searchAttempt
-        val revision = tab.revision
-        fun current() = selected === tab && !tab.destroyed && tab.view === view && tab.revision == revision && searchAttempt == attempt
+        // A late callback from the previous document must not cancel a newly chosen search category.
+        fun current() = selected === tab && !tab.destroyed && tab.view === view && searchAttempt == attempt
         return searchCookieLock.withLock {
             if (!current()) return@withLock false
             // A private WebView must use its own CookieManager, never the app's normal profile.
@@ -223,12 +223,7 @@ class Browser(
             } == true
             if (!current()) return@withLock false
             if (!applied) { notice = R.string.search_filters_failed; return@withLock false }
-            val sent = braveResultsQuery(address)
-            val query = searchQuery(input)
-            if (sent != null && sent != query) {
-                tab.originalWebQueries[sent] = query
-                if (tab.originalWebQueries.size > 16) tab.originalWebQueries.remove(tab.originalWebQueries.keys.first())
-            }
+            tab.webSearchTrail.record(address, request)
             // Changing a cookie may not change the URL. Revalidate rather than reuse the old results.
             loadAddress(tab, view, address, refresh = true)
             true
@@ -242,7 +237,10 @@ class Browser(
         null
     }
 
+    internal fun cancelPendingSearch() { searchAttempt++ }
+
     private fun loadAddress(tab: BrowserTab, view: WebView, address: String, refresh: Boolean = false) {
+        cancelPendingSearch()
         invalidate(tab)
         tab.address = address
         tab.progress = 0
@@ -255,6 +253,7 @@ class Browser(
         if (selected.find) { find(false); return true }
         val view = selected.view ?: return false
         if (view.canGoBack()) {
+            cancelPendingSearch()
             invalidate(selected)
             view.goBack()
             return true
@@ -262,8 +261,10 @@ class Browser(
         return false
     }
 
-    fun forward() { selected.view?.takeIf { it.canGoForward() }?.let { invalidate(selected); it.goForward() } }
-    fun reload(tab: BrowserTab = selected) { tab.view?.let { invalidate(tab); it.reload() } }
+    fun forward() { selected.view?.takeIf { it.canGoForward() }?.let { cancelPendingSearch(); invalidate(selected); it.goForward() } }
+    fun reload(tab: BrowserTab = selected) {
+        tab.view?.let { if (tab === selected) cancelPendingSearch(); invalidate(tab); it.reload() }
+    }
     fun dismissImageMenu() { imageMenu = null }
     fun saveImage(url: String) {
         val tab = selected
@@ -275,10 +276,12 @@ class Browser(
         safely(R.string.download_error) { library.download(url, ua, page, null, null); notice = R.string.download_started }
     }
 
-    fun stopLoading() { selected.view?.stopLoading(); selected.progress = 100 }
+    fun stopLoading() { cancelPendingSearch(); selected.view?.stopLoading(); selected.progress = 100 }
 
     fun home() {
         val tab = selected
+        cancelPendingSearch()
+        tab.webSearchTrail.clear()
         closeVideo()
         invalidate(tab)
         disposeView(tab)
@@ -402,7 +405,6 @@ class Browser(
         }
         tab.view = null
         tab.cookies = null
-        tab.originalWebQueries.clear()
     }
 
     fun closeVideo() {
@@ -502,7 +504,10 @@ class Browser(
             val target = request.url.toString()
             val address = webUrl(target)
             if (address != null) {
-                if (request.isForMainFrame && address.toString().substringBefore('#') != tab.address.substringBefore('#')) invalidate(tab)
+                if (request.isForMainFrame && address.toString().substringBefore('#') != tab.address.substringBefore('#')) {
+                    if (tab === selected && request.hasGesture()) cancelPendingSearch()
+                    invalidate(tab)
+                }
                 return false
             }
             // Websites cannot start a native component without a tap; no arbitrary intent:// extras.
@@ -538,7 +543,7 @@ class Browser(
             if (tab.incognito || tab.failed) return
             val current = webUrl(url)?.toString() ?: return
             // Keep results in the tab's back stack, but not the persistent history/search library.
-            if (braveResultsQuery(current) != null) return
+            if (braveResults(current) != null) return
             val title = tab.title
             scope.launch {
                 try { dao.putVisit(Visit(current, title.ifBlank { current })); dao.trimVisits() }
