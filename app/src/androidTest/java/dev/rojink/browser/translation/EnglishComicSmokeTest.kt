@@ -13,6 +13,7 @@ import kotlinx.coroutines.withTimeout
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.io.ByteArrayOutputStream
 
 @RunWith(AndroidJUnit4::class)
 class EnglishComicSmokeTest {
@@ -95,7 +96,8 @@ class EnglishComicSmokeTest {
                     val bubbles = measured("balloon proposals") { comicBubbles(image) }
                     assertTrue("Faint bubble proposal: $bubbles", bubbles.any { it.bounds.x in 470..500 && it.bounds.y in 680..715 })
                     assertTrue("Dark fill stays separate from the panel rule", bubbles.any { it.dark && it.bounds.y in 884..924 })
-                    val recovered = measured("Tiny with crop recovery and Small review") { ocr.recognize(image, bubbles = bubbles, refine = true) }
+                    measured("adaptive OCR, first Small use") { ocr.recognize(image, bubbles = bubbles, refine = true) }
+                    val recovered = measured("adaptive OCR, warm") { ocr.recognize(image, bubbles = bubbles, refine = true) }
                     val tinyBox = Box(396, 655, 575, 737)
                     fun readings(lines: List<OcrLine>, box: Box) = lines.filter { it.box.overlaps(box) }.map { it.text }
                     assertTrue("After crop recovery: ${readings(recovered, tinyBox)}; full panel: ${readings(fast, tinyBox)}",
@@ -129,7 +131,7 @@ class EnglishComicSmokeTest {
                 val result = pipeline.gallery(data, ReaderOptions("ckb", false, true, ENGLISH_COMIC_SCRIPT, false),
                     ReaderProviders(provider, "english-coverage-fixture", null), true)
                 val after = result.bitmap
-                Log.i("SipanComicSmoke", "coverage gallery, mocked MT: $stages; drawn=${decisions.count { it.second == PaintDecision.DRAWN }}/${decisions.size}")
+                Log.i("SipanComicSmoke", "coverage gallery, mocked MT: $stages; drawn=${decisions.count { it.second == PaintDecision.DRAWN }}/${decisions.size}; kept=${result.keptText}")
                 assertNotNull("Rendered difficult English panel: $seen; paint=$decisions", after)
                 try {
                     assertTrue("Inputs: $seen", seen.any { "I WAS WRONG." in it })
@@ -143,10 +145,18 @@ class EnglishComicSmokeTest {
                         val nearby = decisions.filter { it.first.overlaps(box) }
                         assertTrue("Ink changed in $box ($changed pixels); paint=$nearby; inputs=$seen", changed > 25)
                     }
+                    assertEquals("All 11 fixture balloons were painted: $decisions", 11, decisions.count { it.second == PaintDecision.DRAWN })
                     for (box in listOf(Box(560, 1810, 797, 1963), Box(890, 1870, 1221, 1961))) {
                         for (y in box.top until box.bottom step 2) for (x in box.left until box.right step 2) {
                             assertEquals("Literal pixel at ($x, $y)", before.getPixel(x, y), after!!.getPixel(x, y))
                         }
+                    }
+                    measured("reference PNG round trip skipped in gallery") {
+                        val png = ByteArrayOutputStream().use { out ->
+                            assertTrue(after!!.compress(Bitmap.CompressFormat.PNG, 100, out))
+                            out.toByteArray()
+                        }
+                        BitmapFactory.decodeByteArray(png, 0, png.size).recycle()
                     }
                 } finally { before.recycle(); after?.recycle() }
             }

@@ -104,8 +104,8 @@ internal class ComicSurface(private val image: Bitmap, private val bubbles: List
     }
 
     /** Lend only uniform blank space, including wide or tall space in a confirmed enclosure. */
-    fun fitRoom(original: Box, glyphs: List<Box>, size: Int, avoid: List<Box>): Box? {
-        val reference = borderReference(original) ?: glyphs.asSequence().mapNotNull(::borderReference).firstOrNull() ?: return null
+    fun fitRoom(original: Box, erase: List<Box>, size: Int, avoid: List<Box>): Box? {
+        val reference = borderReference(original) ?: erase.asSequence().mapNotNull(::borderReference).firstOrNull() ?: return null
         val bubble = comicBubbleFor(original, bubbles)
         val dx = (size * if (bubble != null) 2.6f else 1.35f).toInt().coerceIn(2, 116)
         val dy = (size * if (bubble != null) 1.9f else .78f).toInt().coerceIn(2, 84)
@@ -120,9 +120,10 @@ internal class ComicSurface(private val image: Bitmap, private val bubbles: List
             }
         }.distinct().sortedByDescending { it.width * it.height }
         if (candidates.isEmpty()) return null
+        fun beingErased(x: Int, y: Int) = erase.any { x in it.left until it.right && y in it.top until it.bottom }
         // Do not cover unknown ink in a rectangular union (for example, a price tucked between two lines).
         for (y in original.top until original.bottom step 3) for (x in original.left until original.right step 3) {
-            if (glyphs.none { x in it.left until it.right && y in it.top until it.bottom } && !similar(pixel(x, y), reference)) return null
+            if (!similar(pixel(x, y), reference) && !beingErased(x, y)) return null
         }
         val extent = candidates.reduce(Box::union)
         if (extent.width * extent.height > 240_000) return null
@@ -131,7 +132,8 @@ internal class ComicSurface(private val image: Bitmap, private val bubbles: List
         fun clear(room: Box): Boolean {
             for (y in room.top until room.bottom) for (x in room.left until room.right) {
                 if (x in original.left until original.right && y in original.top until original.bottom) continue
-                if (!similar(colors[(y - extent.top) * extent.width + x - extent.left], reference)) return false
+                // A clipped descender/period inside the same checked erasure margin is not surrounding art.
+                if (!similar(colors[(y - extent.top) * extent.width + x - extent.left], reference) && !beingErased(x, y)) return false
             }
             return true
         }

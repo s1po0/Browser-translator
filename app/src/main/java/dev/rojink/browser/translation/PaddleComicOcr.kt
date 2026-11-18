@@ -53,12 +53,13 @@ internal class PaddleComicOcr(private val context: Context) : AutoCloseable {
                 val result = mutableListOf<OcrLine>()
                 var budget = if (refine) MAX_REFINEMENTS else 0
                 var id = 1_000_000
-                fun read(box: Box, region: ComicBubble?, recovered: Boolean) {
+                fun read(box: Box, region: ComicBubble?, recovered: Boolean, isolatedBand: Boolean = false) {
                     if (result.size >= MAX_LINES || box.width < 6 || box.height < 5) return
                     ensureActive()
                     val tiny = active.read(image, box)
+                    if (isolatedBand && (tiny.confidence < .93f || !reliableEnglish(tiny.value))) return
                     val base = baseline.firstOrNull { abs(it.box.y - box.y) < box.height * .45f && areaOverlap(it.box, box) > .69 }
-                    val needsReview = budget > 0 && needsLatinReview(tiny, base, region != null, recovered)
+                    val needsReview = !isolatedBand && budget > 0 && needsLatinReview(tiny, base, region != null, recovered)
                     val text = if (needsReview) {
                         budget--
                         val small = active.refine(image, box)
@@ -84,8 +85,13 @@ internal class PaddleComicOcr(private val context: Context) : AutoCloseable {
                 }.sortedByDescending { it.second.size }.take(MAX_RESCANS)
                 for ((bubble, missed) in recoveries) {
                     ensureActive()
+                    // Thin ink bands sometimes already isolate one complete line, so try CTC before rerunning DB.
+                    missed.asSequence().filter { it.height <= 28 && it.width >= it.height * 2 }.take(3)
+                        .forEach { read(it, bubble, true, isolatedBand = true) }
+                    val remaining = missedBubbleBands(bubble, baseline + result)
+                    if (remaining.isEmpty()) continue
                     val proposals = detectRegion(active, image, bubble.bounds, true).filter { box ->
-                        missed.any { band -> abs(box.y - band.y) <= maxOf(box.height, band.height) * .68f && areaOverlap(box, band) > .30 }
+                        remaining.any { band -> abs(box.y - band.y) <= maxOf(box.height, band.height) * .68f && areaOverlap(box, band) > .30 }
                     }.take(12)
                     for (box in proposals) read(box, bubble, true)
                     // Some tiny lines never cross the DB threshold, even at crop scale. Try only the isolated ink bands.

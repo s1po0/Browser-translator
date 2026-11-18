@@ -46,9 +46,13 @@ internal class ImageRenderer(private val context: Context) {
             if (protected.any { it.overlaps(original) }) { report(PaintDecision.PROTECTED); return@forEachIndexed }
             val avoid = protected + drawnAreas + units.mapIndexedNotNull { i, other -> other.box.takeIf { i != index } }
             if (unit.lines.any { line -> avoid.any { it.overlaps(line) } }) { report(PaintDecision.COLLISION); return@forEachIndexed }
+            val erase = unit.lines.map { line ->
+                val padded = line.expand(2, 2).clip(bitmap.width, bitmap.height)
+                if (avoid.any { padded.overlaps(it) }) line.clip(bitmap.width, bitmap.height) else padded
+            }
             val margin = (unit.sizeHint * .29f).roundToInt().coerceIn(2, 18)
             val roomy = original.expand(if (unit.vertical) margin * 2 else margin, margin).clip(bitmap.width, bitmap.height)
-            val drawBox = if (surface != null && !unit.vertical) surface.fitRoom(original, unit.lines, unit.sizeHint, avoid) ?: original
+            val drawBox = if (surface != null && !unit.vertical) surface.fitRoom(original, erase, unit.sizeHint, avoid) ?: original
                 else if (avoid.any { roomy.overlaps(it) && !original.overlaps(it) }) original else roomy
             val rtl = target in rtlTargets
             val paint = TextPaint(Paint.ANTI_ALIAS_FLAG or Paint.SUBPIXEL_TEXT_FLAG).apply {
@@ -56,11 +60,7 @@ internal class ImageRenderer(private val context: Context) {
             }
             val layout = fitted(value.trim(), paint, drawBox, unit.sizeHint, rtl)
             if (layout == null) { report(PaintDecision.NO_ROOM); return@forEachIndexed }
-            val tones = unit.lines.map { line ->
-                val padded = line.expand(2, 2).clip(bitmap.width, bitmap.height)
-                val box = if (avoid.any { padded.overlaps(it) }) line.clip(bitmap.width, bitmap.height) else padded
-                box to borderTone(bitmap, box)
-            }
+            val tones = erase.map { it to borderTone(bitmap, it) }
             val (background, noisy) = borderTone(bitmap, original)
             for ((box, tone) in tones) {
                 canvas.drawRect(box.left.toFloat(), box.top.toFloat(), box.right.toFloat(), box.bottom.toFloat(), Paint().apply { color = tone.first })
