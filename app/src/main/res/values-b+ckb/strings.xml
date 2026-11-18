@@ -182,4 +182,27 @@
     <string name="search_web_failed_detail">پەیوەندیی ئینتەرنێت بپشکنە و دووبارە هەوڵ بدە، یان «لەسەر ئامێر» هەڵبژێرە.</string>
     <string name="search_setting_web">گەڕانی وێب لە نوارەی ناونیشان</string>
     <string name="search_setting_web_detail">تابە ئاساییەکان وشەی گەڕان بۆ Brave Search دەنێرن. بۆ گەڕان تەنها لەسەر ئامێر، ئەمە ناچالاک بکە.</string>
+    <string name="search_filters">فلتەرەکانی گەڕانی وێب</string>
+    <string name="search_filters_detail">ئەم ڕێکخستنانە تەنها بۆ گەڕانی وێب لە سیپانن، نەک ئەنجامەکانی ناو ئامێر.</string>
+    <string name="search_filters_private_detail">تەنها بۆ ئەم تابە تایبەتەیە. Brave هێشتا ئەو وشانە وەردەگرێت کە بۆ گەڕانی وێب دەنێریت.</string>
+    <string name="search_filters_summary">%1$s · گەڕانی سەلامەت: %2$s</string>
+    <string name="search_filters_apply">جێبەجێکردن</string>
+    <string name="search_filters_failed">فلتەرەکانی گەڕانی وێب ڕێک نەخران. دووبارە هەوڵ بدە.</string>
+    <string name="search_worldwide">هەموو جیهان</string>
+    <string name="search_region">وڵات یان ناوچەی گەڕان</string>
+    <string name="search_region_value">وڵات: %1$s</string>
+    <string name="search_region_with_domain">%1$s (%2$s)</string>
+    <string name="search_country_find">وڵات یان ناوچە بدۆزەوە</string>
+    <string name="search_country_empty">هیچ وڵات یان ناوچەیەک نەدۆزرایەوە</string>
+    <string name="search_region_priority_detail">Brave ئەولەویەت بە ئەم ناوچەیە دەدات، بەڵام ماڵپەڕی ناوچەکانی تریش دەردەکەون.</string>
+    <string name="search_only_country_domains">تەنها دۆمەینی ئەو وڵاتە</string>
+    <string name="search_only_country_domains_detail">داوای ماڵپەڕەکانی %1$s دەکات، بۆیە لەوانەیە ماڵپەڕی ناوخۆیی بە \u2066.com\u2069 نەبینیت. Brave لەوانەیە ئەنجامەکان فراوان بکات یان ڕیکلام پیشان بدات.</string>
+    <string name="search_region_domain_fallback">Brave بۆ ئەم وڵاتە ڕێکخستنی ناوچەیی نییە. سیپان لە جیاتی ئەوە دۆمەینی وڵاتەکە بەکاردەهێنێت.</string>
+    <string name="search_safety">گەڕانی سەلامەت</string>
+    <string name="search_safety_moderate">مامناوەند</string>
+    <string name="search_safety_strict">توند</string>
+    <string name="search_safety_off">ناچالاک</string>
+    <string name="search_safety_moderate_detail">Brave وێنە و ڤیدیۆی ناوەڕۆکی گەورەساڵان فلتەر دەکات.</string>
+    <string name="search_safety_strict_detail">Brave ئەنجامەکانی وێب کە ناوەڕۆکی گەورەساڵانن فلتەر دەکات.</string>
+    <string name="search_safety_off_detail">فلتەری ناوەڕۆکی گەورەساڵانی Brave ناچالاک دەکات. لەوانەیە ئەو ناوەڕۆکە دەرکەوێت. بلۆکی ماڵپەڕ یان تۆڕ لاناچێت.</string>
 </resources>

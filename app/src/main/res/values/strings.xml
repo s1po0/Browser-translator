@@ -182,4 +182,27 @@
     <string name="search_web_failed_detail">Check your connection and try again, or tap On device to search locally.</string>
     <string name="search_setting_web">Web search from the address bar</string>
     <string name="search_setting_web_detail">Normal tabs send submitted search terms to Brave Search. Turn off to search only on this device.</string>
+    <string name="search_filters">Web search filters</string>
+    <string name="search_filters_detail">These settings apply to web searches from Sipan, not to on-device results.</string>
+    <string name="search_filters_private_detail">Only for this private tab. Brave still receives queries you submit to web search.</string>
+    <string name="search_filters_summary">%1$s · Safe Search: %2$s</string>
+    <string name="search_filters_apply">Apply</string>
+    <string name="search_filters_failed">Could not set web search filters. Try again.</string>
+    <string name="search_worldwide">Worldwide</string>
+    <string name="search_region">Search country or region</string>
+    <string name="search_region_value">Country: %1$s</string>
+    <string name="search_region_with_domain">%1$s (%2$s)</string>
+    <string name="search_country_find">Find a country or region</string>
+    <string name="search_country_empty">No matching countries or regions</string>
+    <string name="search_region_priority_detail">Brave prioritizes this region but can show sites from elsewhere.</string>
+    <string name="search_only_country_domains">Country domains only</string>
+    <string name="search_only_country_domains_detail">Requests %1$s sites, so local .com sites can be missed. Brave may broaden results or show ads.</string>
+    <string name="search_region_domain_fallback">Brave has no region preset for this selection. Sipan uses the country domain instead.</string>
+    <string name="search_safety">Safe Search</string>
+    <string name="search_safety_moderate">Moderate</string>
+    <string name="search_safety_strict">Strict</string>
+    <string name="search_safety_off">Off</string>
+    <string name="search_safety_moderate_detail">Brave filters explicit images and videos.</string>
+    <string name="search_safety_strict_detail">Brave also filters explicit web results.</string>
+    <string name="search_safety_off_detail">Turns off Brave’s adult-content filter. Explicit results may appear. This does not bypass website or network blocks.</string>
 </resources>

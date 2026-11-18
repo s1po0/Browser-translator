@@ -35,7 +35,12 @@ import dev.rojink.browser.data.BrowserDao
 import dev.rojink.browser.data.BrowserSettings
 import dev.rojink.browser.data.Visit
 import dev.rojink.browser.data.SearchPage
+import dev.rojink.browser.search.BRAVE_SEARCH_ORIGIN
+import dev.rojink.browser.search.WebSearchFilters
 import dev.rojink.browser.search.braveResultsQuery
+import dev.rojink.browser.search.braveSearchCookies
+import dev.rojink.browser.search.braveSearchUrl
+import dev.rojink.browser.search.searchQuery
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -43,10 +48,15 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONObject
 import java.io.ByteArrayInputStream
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.coroutines.resume
 import kotlin.math.abs
 
 class BrowserTab(val incognito: Boolean) {
@@ -83,6 +93,11 @@ class BrowserTab(val incognito: Boolean) {
     var revision = 0L
         internal set
     @Volatile internal var destroyed = false
+    internal var privateSearchFilters by mutableStateOf(WebSearchFilters())
+    // Remembers which operators Sipan appended, not any operators the user typed.
+    internal val originalWebQueries = LinkedHashMap<String, String>()
+
+    internal fun displayedWebQuery(): String? = braveResultsQuery(address)?.let { originalWebQueries[it] ?: searchQuery(it) }
 }
 
 interface DocumentFeatures {
@@ -114,6 +129,8 @@ class Browser(
     @Volatile private var filterTrackers = true
     @Volatile var features: DocumentFeatures = object : DocumentFeatures {}
     private var blockCounterUpdateScheduled = false
+    private val searchCookieLock = Mutex()
+    private var searchAttempt = 0L
     val supportsPrivate get() = WebViewFeature.isFeatureSupported(WebViewFeature.MULTI_PROFILE)
 
     init {
@@ -156,6 +173,7 @@ class Browser(
 
     fun select(tab: BrowserTab) {
         if (selected === tab || tab !in tabs) return
+        searchAttempt++
         closeVideo()
         features.foreground(selected, false)
         selected.view?.onPause()
@@ -178,18 +196,58 @@ class Browser(
     fun navigate(input: String): Boolean {
         val address = resolveLink(input) ?: return false.also { notice = R.string.address_error }
         val tab = selected
-        val view = tab.view ?: try {
-            makeView(tab)
-        } catch (e: RuntimeException) {
-            notice = if (tab.incognito) R.string.private_unsupported else R.string.webview_error
-            return false
+        val view = ensureView(tab) ?: return false
+        loadAddress(tab, view, address)
+        return true
+    }
+
+    /** Called on the main thread after a submitted web search or applying filters to a results page. */
+    internal suspend fun searchWeb(input: String, filters: WebSearchFilters, path: String = "/search"): Boolean {
+        val address = braveSearchUrl(input, filters, path) ?: return false
+        val tab = selected
+        val view = ensureView(tab) ?: return false
+        val attempt = ++searchAttempt
+        val revision = tab.revision
+        fun current() = selected === tab && !tab.destroyed && tab.view === view && tab.revision == revision && searchAttempt == attempt
+        return searchCookieLock.withLock {
+            if (!current()) return@withLock false
+            // A private WebView must use its own CookieManager, never the app's normal profile.
+            val applied = tab.cookies?.let { cookies ->
+                withTimeoutOrNull(5_000) {
+                    braveSearchCookies(filters).all { value ->
+                        current() && suspendCancellableCoroutine<Boolean> { cont ->
+                            cookies.setCookie(BRAVE_SEARCH_ORIGIN, value) { if (cont.isActive) cont.resume(it == true) }
+                        }
+                    }
+                }
+            } == true
+            if (!current()) return@withLock false
+            if (!applied) { notice = R.string.search_filters_failed; return@withLock false }
+            val sent = braveResultsQuery(address)
+            val query = searchQuery(input)
+            if (sent != null && sent != query) {
+                tab.originalWebQueries[sent] = query
+                if (tab.originalWebQueries.size > 16) tab.originalWebQueries.remove(tab.originalWebQueries.keys.first())
+            }
+            // Changing a cookie may not change the URL. Revalidate rather than reuse the old results.
+            loadAddress(tab, view, address, refresh = true)
+            true
         }
+    }
+
+    private fun ensureView(tab: BrowserTab): WebView? = tab.view ?: try {
+        makeView(tab)
+    } catch (_: RuntimeException) {
+        notice = if (tab.incognito) R.string.private_unsupported else R.string.webview_error
+        null
+    }
+
+    private fun loadAddress(tab: BrowserTab, view: WebView, address: String, refresh: Boolean = false) {
         invalidate(tab)
         tab.address = address
         tab.progress = 0
         tab.failed = false
-        view.loadUrl(address)
-        return true
+        if (refresh && view.url == address) view.reload() else view.loadUrl(address)
     }
 
     fun back(): Boolean {
@@ -344,6 +402,7 @@ class Browser(
         }
         tab.view = null
         tab.cookies = null
+        tab.originalWebQueries.clear()
     }
 
     fun closeVideo() {

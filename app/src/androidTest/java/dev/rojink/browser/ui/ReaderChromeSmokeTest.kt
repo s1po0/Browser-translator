@@ -8,6 +8,9 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import dev.rojink.browser.MainActivity
 import dev.rojink.browser.RojInkApp
 import dev.rojink.browser.search.AddressSearchMode
+import dev.rojink.browser.search.WebSafeSearch
+import dev.rojink.browser.search.WebSearchFilters
+import dev.rojink.browser.search.braveSearchUrl
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -39,8 +42,8 @@ class ReaderChromeSmokeTest {
         compose.onNodeWithTag("sipan-web-context").assertDoesNotExist()
         compose.onNodeWithTag("sipan-enable-web").performClick()
         // Check the app's real navigation and UI, independent of the external site's availability/content.
+        awaitAddress("https://search.brave.com/search?q=hi")
         compose.onNodeWithTag("sipan-web-context").assertIsDisplayed()
-        field.assertTextContains("https://search.brave.com/search?q=hi", substring = true)
         val store = (compose.activity.application as RojInkApp).settings
         runBlocking { withTimeout(8_000) { store.values.first { it.addressSearch == AddressSearchMode.WEB } } }
 
@@ -53,13 +56,52 @@ class ReaderChromeSmokeTest {
         field.performTextReplacement("weather in Erbil")
         field.performImeAction()
         compose.onNodeWithTag("sipan-enable-web").assertDoesNotExist()
-        field.assertTextContains("https://search.brave.com/search?q=weather%20in%20Erbil", substring = true)
+        awaitAddress("https://search.brave.com/search?q=weather%20in%20Erbil")
+    }
+
+    @Test fun countryAndSafeSearchApplyToWebResultsWithoutOptingInToAddressSearch() = withAddressSearch(AddressSearchMode.DEVICE) {
+        val address = compose.onNodeWithTag("reader-address")
+        address.performTextInput("Erbil")
+        address.performImeAction()
+        val filters = compose.onNodeWithTag("sipan-search-filters")
+        filters.assertIsDisplayed().performClick()
+        compose.onNodeWithTag("sipan-country-picker").performClick()
+        compose.onNodeWithTag("sipan-country-query").performTextInput("عێراق")
+        compose.onNodeWithTag("sipan-country-IQ").assertIsDisplayed().performClick()
+        compose.onNodeWithTag("sipan-safety-off").performScrollTo().performClick()
+        compose.onNodeWithTag("sipan-apply-filters").performClick()
+
+        val store = (compose.activity.application as RojInkApp).settings
+        val expected = WebSearchFilters(country = "IQ", safeSearch = WebSafeSearch.OFF)
+        runBlocking { withTimeout(8_000) { store.values.first { it.webSearchFilters == expected } } }
+        compose.onNodeWithTag("sipan-web-context").assertDoesNotExist()
+        filters.assert(hasText("Iraq (.iq) · Safe Search: Off"))
+        compose.onNodeWithTag("sipan-web-search-once").performClick()
+        awaitAddress(braveSearchUrl("Erbil", expected)!!)
+
+        // Reapplying in the results header removes the previous domain operator rather than stacking it.
+        filters.performClick()
+        compose.onNodeWithTag("sipan-country-picker").performClick()
+        compose.onNodeWithTag("sipan-country-world").performClick()
+        compose.onNodeWithTag("sipan-safety-strict").performScrollTo().performClick()
+        compose.onNodeWithTag("sipan-apply-filters").performClick()
+        val worldwide = expected.copy(country = null, safeSearch = WebSafeSearch.STRICT)
+        runBlocking { withTimeout(8_000) { store.values.first { it.webSearchFilters == worldwide } } }
+        awaitAddress(braveSearchUrl("Erbil", worldwide)!!, exact = true)
+        compose.onNodeWithTag("sipan-device-search").performClick()
+        compose.onNodeWithTag("sipan-query").assertTextContains("Erbil")
+        assertTrue(runBlocking { store.values.first() }.addressSearch == AddressSearchMode.DEVICE)
+    }
+
+    private fun awaitAddress(url: String, exact: Boolean = false) {
+        val match = hasTestTag("reader-address") and hasText(url, substring = !exact)
+        compose.waitUntil(12_000) { compose.onAllNodes(match).fetchSemanticsNodes().isNotEmpty() }
     }
 
     private fun withAddressSearch(mode: AddressSearchMode, block: () -> Unit) {
         val store = (compose.activity.application as RojInkApp).settings
         val prefs = runBlocking { store.values.first() }
-        runBlocking { store.update { it.copy(uiLanguage = "en", addressSearch = mode) } }
+        runBlocking { store.update { it.copy(uiLanguage = "en", addressSearch = mode, webSearchFilters = WebSearchFilters()) } }
         try {
             val hint = if (mode == AddressSearchMode.DEVICE) "Enter a link or search this device" else "Enter a link or search"
             compose.waitUntil(8_000) { compose.onAllNodes(hasText(hint)).fetchSemanticsNodes().isNotEmpty() }

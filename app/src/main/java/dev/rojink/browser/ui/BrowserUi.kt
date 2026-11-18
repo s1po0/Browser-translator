@@ -57,8 +57,8 @@ import dev.rojink.browser.R
 import dev.rojink.browser.RojInkApp
 import dev.rojink.browser.data.BrowserSettings
 import dev.rojink.browser.search.AddressSearchMode
-import dev.rojink.browser.search.braveResultsQuery
-import dev.rojink.browser.search.braveSearchUrl
+import dev.rojink.browser.search.WebSearchFilters
+import dev.rojink.browser.search.braveResultsPath
 import dev.rojink.browser.search.forTab
 import dev.rojink.browser.web.AddressInput
 import dev.rojink.browser.web.addressInput
@@ -98,8 +98,10 @@ private enum class Screen(val title: Int) {
     val tab = browser.selected
     var searchQuery by remember(tab.id) { mutableStateOf("") }
     var searchChoice by remember(tab.id) { mutableStateOf<String?>(null) }
+    var showSearchFilters by remember(tab.id) { mutableStateOf(false) }
     val searchMode = settings.addressSearch.forTab(tab.incognito)
-    val webQuery = remember(tab.address) { braveResultsQuery(tab.address) }
+    val webFilters = if (tab.incognito) tab.privateSearchFilters else settings.webSearchFilters
+    val webQuery = tab.displayedWebQuery()
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     val video = browser.fullScreen
@@ -112,9 +114,15 @@ private enum class Screen(val title: Int) {
         hideKeyboard()
         screen = Screen.Search
     }
-    fun searchWeb(input: String) {
-        val url = braveSearchUrl(input) ?: return
-        navigate(url)
+    fun searchWeb(input: String, filters: WebSearchFilters = webFilters, path: String = "/search") {
+        hideKeyboard()
+        browser.safely(R.string.search_filters_failed) {
+            if (browser.searchWeb(input, filters, path)) screen = Screen.Browser
+        }
+    }
+    fun configureSearch() {
+        hideKeyboard()
+        showSearchFilters = true
     }
     fun open(target: Screen) {
         if (target == Screen.Search) searchDevice(webQuery ?: searchQuery) else screen = target
@@ -163,6 +171,14 @@ private enum class Screen(val title: Int) {
             if (mode == AddressSearchMode.WEB) searchWeb(query)
         }
     }
+    if (showSearchFilters) WebFiltersDialog(webFilters, tab.incognito, onClose = { showSearchFilters = false }) { filters ->
+        showSearchFilters = false
+        if (filters != webFilters) {
+            if (tab.incognito) tab.privateSearchFilters = filters
+            else browser.safely { app.settings.update { it.copy(webSearchFilters = filters) } }
+            if (screen == Screen.Browser && webQuery != null) searchWeb(webQuery, filters, braveResultsPath(tab.address))
+        }
+    }
     Scaffold(containerColor = MaterialTheme.colorScheme.background, snackbarHost = { SnackbarHost(snackbar) }) { inset ->
         if (screen == Screen.Browser) {
             val focus = remember { FocusRequester() }
@@ -191,18 +207,18 @@ private enum class Screen(val title: Int) {
                                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 5.dp)) {
                                 Text(if (sorani) "English" else "کوردی", style = MaterialTheme.typography.labelLarge, maxLines = 1)
                             }
-                            BrowserMenu(browser, ::open, onPhoto)
+                            BrowserMenu(browser, ::open, onPhoto, ::configureSearch)
                         }
                         Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = if (home) 16.dp else 4.dp, top = 3.dp, bottom = 8.dp),
                             verticalAlignment = Alignment.CenterVertically) {
                             AddressField(tab, focus, searchMode, Modifier.weight(1f), onReload = {
                                 if (tab.progress < 100) browser.stopLoading() else if (tab.view == null) navigate(tab.address) else browser.reload()
                             }, submit = ::submit)
-                            if (!home) BrowserMenu(browser, ::open, onPhoto)
+                            if (!home) BrowserMenu(browser, ::open, onPhoto, ::configureSearch)
                         }
                     }
                 }
-                if (webQuery != null) WebSearchBar { searchDevice(webQuery) }
+                if (webQuery != null) WebSearchBar(webFilters, ::configureSearch) { searchDevice(webQuery) }
                 if (tab.progress < 100) LinearProgressIndicator(progress = { tab.progress / 100f }, modifier = Modifier.fillMaxWidth())
                 if (tab.find) FindBar(browser, tab)
                 translationBar()
@@ -229,8 +245,8 @@ private enum class Screen(val title: Int) {
                 ScreenHeader(screen.title, ::finishScreen)
                 when (screen) {
                     Screen.Search -> key(tab.id) {
-                        SipanSearchScreen(browser.dao, searchQuery, tab.incognito, onSearch = { searchQuery = it },
-                            onOpen = ::navigate, onWeb = ::searchWeb)
+                        SipanSearchScreen(browser.dao, searchQuery, tab.incognito, webFilters, ::configureSearch,
+                            onSearch = { searchQuery = it }, onOpen = ::navigate, onWeb = { searchWeb(it) })
                     }
                     Screen.Tabs -> TabGrid(browser, { browser.select(it); screen = Screen.Browser }) { privateTab -> if (browser.newTab(privateTab)) screen = Screen.Browser }
                     Screen.Bookmarks -> SavedPages(bookmarks.map { SavedPage(it.url, it.title) }, R.string.no_bookmarks, onOpen = { if (browser.navigate(it)) screen = Screen.Browser },
@@ -251,7 +267,7 @@ private enum class Screen(val title: Int) {
     }
 }
 
-@Composable private fun BrowserMenu(browser: Browser, open: (Screen) -> Unit, onPhoto: (() -> Unit)?) {
+@Composable private fun BrowserMenu(browser: Browser, open: (Screen) -> Unit, onPhoto: (() -> Unit)?, configureSearch: () -> Unit) {
     var menu by remember { mutableStateOf(false) }
     val tab = browser.selected
     Box {
@@ -261,6 +277,7 @@ private enum class Screen(val title: Int) {
                 DropdownMenuItem(text = { Text(tr(id)) }, enabled = enabled, onClick = { menu = false; action() })
             }
             item(R.string.search_on_device_title) { open(Screen.Search) }
+            item(R.string.search_filters, action = configureSearch)
             item(R.string.new_tab) { browser.newTab() }
             item(R.string.private_tab) { browser.newTab(true) }
             if (tab.address.isNotEmpty()) {

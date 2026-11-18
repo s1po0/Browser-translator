@@ -28,6 +28,7 @@ import dev.rojink.browser.search.AddressSearchMode
 import dev.rojink.browser.search.SEARCH_QUERY_LIMIT
 import dev.rojink.browser.search.SearchEntry
 import dev.rojink.browser.search.SearchSource
+import dev.rojink.browser.search.WebSearchFilters
 import dev.rojink.browser.search.findInSipan
 import dev.rojink.browser.search.readSipanIndex
 import dev.rojink.browser.search.searchQuery
@@ -36,6 +37,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 @Composable internal fun SipanSearchScreen(dao: BrowserDao, query: String, privateTab: Boolean,
+    filters: WebSearchFilters, onFilters: () -> Unit,
     onSearch: (String) -> Unit, onOpen: (String) -> Unit, onWeb: (String) -> Unit,
 ) {
     val context = LocalContext.current
@@ -73,6 +75,7 @@ import kotlinx.coroutines.withContext
             val list = Modifier.fillMaxSize().then(if (!results.isNullOrEmpty()) Modifier.testTag("sipan-results") else Modifier)
             key(query) {
                 LazyColumn(list, contentPadding = PaddingValues(bottom = 18.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                    item(key = "filters") { WebFiltersButton(filters, onFilters, Modifier.fillMaxWidth()) }
                     if (input.isNotBlank()) item(key = "web") { WebSearchAction(privateTab) { submit(onWeb) } }
                     when {
                         query.isBlank() -> item { SearchStarter(onSearch) }
@@ -105,14 +108,16 @@ import kotlinx.coroutines.withContext
         })
 }
 
-@Composable internal fun WebSearchBar(onDevice: () -> Unit) {
+@Composable internal fun WebSearchBar(filters: WebSearchFilters, onFilters: () -> Unit, onDevice: () -> Unit) {
     val palette = MaterialTheme.colorScheme
     Surface(color = palette.surfaceContainer, modifier = Modifier.fillMaxWidth().testTag("sipan-web-context")) {
-        Row(Modifier.padding(start = 16.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Icon(Icons.Default.Search, null, Modifier.size(17.dp), palette.primary)
-            Text(tr(R.string.search_web_provider), Modifier.weight(1f), style = MaterialTheme.typography.labelMedium)
-            TextButton(onClick = onDevice, modifier = Modifier.testTag("sipan-device-search")) { Text(tr(R.string.search_on_device)) }
+        Column(Modifier.padding(start = 16.dp, end = 8.dp, bottom = 3.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(Icons.Default.Search, null, Modifier.size(17.dp), palette.primary)
+                Text(tr(R.string.search_web_provider), Modifier.weight(1f), style = MaterialTheme.typography.labelMedium)
+                TextButton(onClick = onDevice, modifier = Modifier.testTag("sipan-device-search")) { Text(tr(R.string.search_on_device)) }
+            }
+            WebFiltersButton(filters, onFilters, Modifier.fillMaxWidth().padding(end = 8.dp))
         }
     }
 }

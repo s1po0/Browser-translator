@@ -21,6 +21,9 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import dev.rojink.browser.search.AddressSearchMode
+import dev.rojink.browser.search.WebSafeSearch
+import dev.rojink.browser.search.WebSearchFilters
+import dev.rojink.browser.search.searchCountryCode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -89,6 +92,7 @@ data class BrowserSettings(
     val ocrHint: String = "auto",
     val enhancedOcr: Boolean = true,
     val addressSearch: AddressSearchMode = AddressSearchMode.ASK,
+    val webSearchFilters: WebSearchFilters = WebSearchFilters(),
 )
 
 private val Context.preferences by preferencesDataStore("rojink-settings")
@@ -98,6 +102,9 @@ private object Prefs {
     val ui = stringPreferencesKey("ui")
     val oldEngine = stringPreferencesKey("engine")
     val addressSearch = stringPreferencesKey("address_search_mode")
+    val searchCountry = stringPreferencesKey("web_search_country")
+    val searchSafety = stringPreferencesKey("web_search_safety")
+    val searchDomainsOnly = booleanPreferencesKey("web_search_country_domains_only")
     val size = intPreferencesKey("text_size")
     val text = booleanPreferencesKey("page_text")
     val images = booleanPreferencesKey("images")
@@ -115,6 +122,9 @@ class SettingsStore(context: Context) {
         translateImages = p[Prefs.images] ?: true, trackerBlocking = p[Prefs.block] ?: true,
         useVision = p[Prefs.vision] ?: false, ocrHint = p[Prefs.hint] ?: "auto", enhancedOcr = p[Prefs.enhanced] ?: true,
         addressSearch = p[Prefs.addressSearch].let { saved -> AddressSearchMode.entries.firstOrNull { it.name == saved } } ?: AddressSearchMode.ASK,
+        webSearchFilters = WebSearchFilters(searchCountryCode(p[Prefs.searchCountry]),
+            p[Prefs.searchSafety].let { saved -> WebSafeSearch.entries.firstOrNull { it.name == saved } } ?: WebSafeSearch.MODERATE,
+            p[Prefs.searchDomainsOnly] ?: false),
     )
     val values = store.data.map(::decode)
     suspend fun update(transform: (BrowserSettings) -> BrowserSettings) = store.edit { p ->
@@ -124,6 +134,10 @@ class SettingsStore(context: Context) {
         p[Prefs.ui] = settings.uiLanguage
         p.remove(Prefs.oldEngine)
         p[Prefs.addressSearch] = settings.addressSearch.name
+        val filters = settings.webSearchFilters
+        p[Prefs.searchCountry] = searchCountryCode(filters.country).orEmpty()
+        p[Prefs.searchSafety] = filters.safeSearch.name
+        p[Prefs.searchDomainsOnly] = filters.countryDomainsOnly
         p[Prefs.size] = settings.textSize.coerceIn(75, 175)
         p[Prefs.text] = settings.translateText
         p[Prefs.images] = settings.translateImages
