@@ -71,12 +71,31 @@ jobs:
           apk="$RUNNER_TEMP/sipan-release/sipan-signed-release.apk"
           tools="$ANDROID_HOME/build-tools/36.0.0"
           printf '%s  %s\n' "$APK_SHA256" "$apk" | sha256sum -c -
-          "$tools/apksigner" verify --print-certs "$apk"
+          signer_digests() {
+            "$tools/apksigner" verify --print-certs "$1" | sed -nE 's/^Signer #[0-9]+ certificate SHA-256 digest: ([0-9a-f]{64})$/\1/p' | sort
+          }
+          signers=$(signer_digests "$apk")
+          [[ -n "$signers" ]]
           badging=$("$tools/aapt" dump badging "$apk" | sed -n '1p')
           [[ "$badging" == "package: name='dev.rojink.browser' "* ]]
           version=$(sed -n "s/.*versionName='\([^']*\)'.*/\1/p" <<< "$badging")
-          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          code=$(sed -n "s/.*versionCode='\([0-9]*\)'.*/\1/p" <<< "$badging")
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ && "$code" =~ ^[1-9][0-9]*$ ]]
           tag="v$version"
+          previous=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)
+          [[ "$previous" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          if [[ "$previous" != "$tag" ]]; then
+            old="$RUNNER_TEMP/sipan-previous.apk"
+            curl -q --fail --silent --show-error --location --retry 3 --retry-all-errors --max-time 150 --output "$old" \
+              "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/download/$previous/sipan-signed-release.apk"
+            old_signers=$(signer_digests "$old")
+            old_badging=$("$tools/aapt" dump badging "$old" | sed -n '1p')
+            old_code=$(sed -n "s/.*versionCode='\([0-9]*\)'.*/\1/p" <<< "$old_badging")
+            [[ "$old_badging" == "package: name='dev.rojink.browser' "* && "$old_signers" == "$signers" ]]
+            [[ "$old_code" =~ ^[1-9][0-9]*$ ]]
+            (( code > old_code ))
+            printf 'Install-over check: same package and signing certificate as %s; versionCode %s → %s.\n' "$previous" "$old_code" "$code" | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
           notes="$RUNNER_TEMP/sipan-release-notes.md"
           {
             printf 'Download **sipan-signed-release.apk** on Android 8.0 or later and open it in Files. Install over the previous signed Sipan/RojInk app without uninstalling it.\n\n'
