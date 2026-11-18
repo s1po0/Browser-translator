@@ -27,7 +27,8 @@ import dev.rojink.browser.translation.ProviderFactory
 import dev.rojink.browser.web.Browser
 
 class MainActivity : ComponentActivity() {
-    private lateinit var browser: Browser
+    internal lateinit var browser: Browser
+        private set
     private lateinit var images: ImagePipeline
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)

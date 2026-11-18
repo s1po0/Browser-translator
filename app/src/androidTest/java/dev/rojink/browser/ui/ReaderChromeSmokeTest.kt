@@ -2,6 +2,9 @@ package dev.rojink.browser.ui
 
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -11,6 +14,8 @@ import dev.rojink.browser.search.AddressSearchMode
 import dev.rojink.browser.search.WebSafeSearch
 import dev.rojink.browser.search.WebSearchFilters
 import dev.rojink.browser.search.braveSearchUrl
+import dev.rojink.browser.web.BrowserTab
+import dev.rojink.browser.web.DocumentFeatures
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -101,6 +106,19 @@ class ReaderChromeSmokeTest {
     private fun withAddressSearch(mode: AddressSearchMode, block: () -> Unit) {
         val store = (compose.activity.application as RojInkApp).settings
         val prefs = runBlocking { store.values.first() }
+        // Keep the navigation tests independent of the public site's redirects, connection and content.
+        compose.runOnIdle {
+            val browser = compose.activity.browser
+            val original = browser.features
+            browser.features = object : DocumentFeatures by original {
+                override fun intercept(tab: BrowserTab, request: WebResourceRequest): WebResourceResponse? {
+                    if (request.url.scheme == "https" && request.url.host == "search.brave.com") {
+                        return WebResourceResponse("text/html", "utf-8", "<!doctype html><title>Search test</title>".byteInputStream())
+                    }
+                    return original.intercept(tab, request)
+                }
+            }
+        }
         runBlocking { store.update { it.copy(uiLanguage = "en", addressSearch = mode, webSearchFilters = WebSearchFilters()) } }
         try {
             val hint = if (mode == AddressSearchMode.DEVICE) "Enter a link or search this device" else "Enter a link or search"
@@ -121,12 +139,26 @@ class ReaderChromeSmokeTest {
             compose.waitUntil(8_000) { compose.onAllNodes(hasTestTag("reader-ui-language") and hasText("English")).fetchSemanticsNodes().isNotEmpty() }
             assertTrue("The language button moves to the logical end in RTL", language.fetchSemanticsNode().boundsInRoot.center.x < englishPosition)
 
-            // The sample is served by WebView from bundled assets. Never start live translation in this test.
-            compose.runOnIdle {
-                compose.activity.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("demo", "https://rojink.invalid/demo/"))
+            // Android restricts clipboard reads to the focused app. Set the clip and tap Paste
+            // together on the UI thread, before a focus/clipboard-overlay transition can intervene.
+            val demo = "https://rojink.invalid/demo/"
+            compose.waitUntil(8_000) { compose.runOnIdle { compose.activity.hasWindowFocus() } }
+            compose.onNodeWithTag("reader-paste").assertIsDisplayed().performSemanticsAction(SemanticsActions.OnClick) { click ->
+                val activity = compose.activity
+                activity.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("demo", demo))
+                assertTrue(click())
             }
-            compose.onNodeWithTag("reader-paste").assertIsDisplayed().performClick()
-            compose.waitUntil(18_000) { compose.onAllNodes(hasTestTag("reader-translate") and isEnabled()).fetchSemanticsNodes().isNotEmpty() }
+            awaitAddress(demo, exact = true)
+            // The sample is served from bundled assets. Never start live translation in this test.
+            try {
+                compose.waitUntil(18_000) { compose.onAllNodes(hasTestTag("reader-translate") and isEnabled()).fetchSemanticsNodes().isNotEmpty() }
+            } catch (failure: ComposeTimeoutException) {
+                val state = compose.runOnIdle {
+                    val tab = compose.activity.browser.selected
+                    "address=${tab.address} progress=${tab.progress} failed=${tab.failed} WebView=${tab.view?.url}"
+                }
+                throw AssertionError("Pasted sample didn't expose Translate: $state", failure)
+            }
             compose.onNodeWithTag("reader-translation-sheet").assertDoesNotExist()
             compose.onNodeWithTag("reader-translate").performClick()
             compose.onNodeWithTag("reader-target-language").assert(hasText("کوردیی سۆرانی"))
