@@ -219,7 +219,8 @@ class ReaderChromeSmokeTest {
             compose.onNode(imageLanguage).activate()
             option("Auto-detect").assertIsSelected()
             option("English comics").assertIsNotSelected()
-            option("English").assertIsNotSelected().activate()
+            option("Devanagari").performScrollTo().assertIsDisplayed()
+            option("English").performScrollTo().assertIsDisplayed().assertIsNotSelected().activate()
 
             runBlocking { withTimeout(8_000) { store.values.first { it.ocrHint == ENGLISH_IMAGE_LANGUAGE } } }
             compose.waitUntil(8_000) { compose.onAllNodes(imageLanguage and hasText("English")).fetchSemanticsNodes().isNotEmpty() }

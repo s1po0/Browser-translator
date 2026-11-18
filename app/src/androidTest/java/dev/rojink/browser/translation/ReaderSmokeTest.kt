@@ -99,7 +99,7 @@ class ReaderSmokeTest {
         }
     }
 
-    @Test fun JapaneseKoreanAndEnglishUseRealScriptModelsAndPreserveMenuPricePixels() = runBlocking {
+    @Test fun JapaneseKoreanAndEnglishUseRealScriptModelsAndPreserveMenuPricePixels(): Unit = runBlocking {
         withTimeout(100_000) {
             ImagePipeline(instrumentation.targetContext).use { image ->
                 val provider = SampleProvider()
