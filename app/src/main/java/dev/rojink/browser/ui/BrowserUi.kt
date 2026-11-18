@@ -248,9 +248,7 @@ private enum class Screen(val title: Int) {
                             if (webSearch == null) null else R.string.search_web_failed_detail, Modifier.align(Alignment.Center), button = R.string.try_again) {
                             if (view == null) browser.navigate(tab.address) else browser.reload()
                         }
-                        view != null && tab.address.isNotEmpty() -> key(tab.id, view) {
-                            NativeView(view, Modifier.fillMaxSize().testTag("reader-web-page"))
-                        }
+                        view != null && tab.address.isNotEmpty() -> key(tab.id, view) { NativeView(view, Modifier.fillMaxSize()) }
                         else -> ReaderHome(tab, bookmarks, settings.target, onPaste = ::pasteLink, onPhoto = onPhoto,
                             onDemo = { navigate("https://rojink.invalid/demo/") }, onSaved = { screen = Screen.Bookmarks }, onBookmark = ::navigate,
                             onSearch = { showSearch(WebSearchRequest(it), onDevice = tab.incognito) })

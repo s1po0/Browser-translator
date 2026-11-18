@@ -75,8 +75,8 @@ class ReaderChromeSmokeTest {
         compose.onNodeWithTag("sipan-country-picker").performClick()
         compose.onNodeWithTag("sipan-country-query").performTextInput("عێراق")
         compose.onNodeWithTag("sipan-country-IQ").assertIsDisplayed().performClick()
-        compose.onNodeWithTag("sipan-safety-off").performScrollTo().performClick()
-        compose.onNodeWithTag("sipan-apply-filters").performClick()
+        compose.onNodeWithTag("sipan-safety-off").performScrollTo().performClick().assertIsSelected()
+        applySearchFilters()
 
         val store = (compose.activity.application as RojInkApp).settings
         val expected = WebSearchFilters(country = "IQ", safeSearch = WebSafeSearch.OFF)
@@ -90,8 +90,8 @@ class ReaderChromeSmokeTest {
         filters.performClick()
         compose.onNodeWithTag("sipan-country-picker").performClick()
         compose.onNodeWithTag("sipan-country-world").performClick()
-        compose.onNodeWithTag("sipan-safety-strict").performScrollTo().performClick()
-        compose.onNodeWithTag("sipan-apply-filters").performClick()
+        compose.onNodeWithTag("sipan-safety-strict").performScrollTo().performClick().assertIsSelected()
+        applySearchFilters()
         val worldwide = expected.copy(country = null, safeSearch = WebSafeSearch.STRICT)
         runBlocking { withTimeout(8_000) { store.values.first { it.webSearchFilters == worldwide } } }
         awaitAddress(braveSearchUrl(WebSearchRequest("Erbil"), worldwide)!!, exact = true)
@@ -150,6 +150,13 @@ class ReaderChromeSmokeTest {
         tools.assertDoesNotExist()
         compose.onNodeWithTag("sipan-web-search-once").performClick()
         awaitAddress("https://search.brave.com/images?q=Erbil%20Citadel", exact = true)
+    }
+
+    private fun applySearchFilters() {
+        // The IME from the country picker can still be leaving as this dialog reappears.
+        compose.onNodeWithTag("sipan-apply-filters").performSemanticsAction(SemanticsActions.OnClick) { click ->
+            assertTrue(click())
+        }
     }
 
     private fun awaitAddress(url: String, exact: Boolean = false) {
