@@ -6,8 +6,8 @@ Sipan is a native Android browser for reading web pages, manga, manhwa, webtoons
 
 ## Install the APK without Android Studio
 
-1. On your Android phone (Android 8.0 or later), sign in to GitHub and open the [Build Android APK runs](https://github.com/s1po0/Browser-translator/actions/workflows/build-apk.yml?query=branch%3Aarena%2F1fef4dd4-browser-translator). Open the latest successful signed build on the working branch.
-2. Under **Artifacts**, download **sipan-signed-release.apk** and open it directly in Files. GitHub also lists the download in the run summary. **translating-browser-debug.apk** is a separate test build; older runs distribute it as a ZIP that you must extract first. If Android asks, allow installation from the file manager you just used. You can turn that permission off again afterwards.
+1. On your Android phone (Android 8.0 or later), download **sipan-signed-release.apk** from [Sipan releases](https://github.com/s1po0/Browser-translator/releases/latest). The public APK download does not require a GitHub account.
+2. Open the `.apk` directly in Files. If Android asks, allow installation from the file manager you just used. You can turn that permission off again afterwards. Development builds remain in [GitHub Actions](https://github.com/s1po0/Browser-translator/actions/workflows/build-apk.yml?query=branch%3Aarena%2F1fef4dd4-browser-translator), which may require signing in; `translating-browser-debug.apk` is not the update for a signed installation.
 3. Open **Sipan**. Use **Paste & open** on a copied link, type in the address bar, or try the sample page. Tap **Translate → Start translation**. Scroll for newly visible panels. Hold a translated image to peek at the original, or use **Show original** for the whole page. To save an original web image, switch to **Show original**, then long-press the image.
 
 The debug APK is for testing (`dev.rojink.browser.debug`). GitHub's clean runners use debug signing keys, so a build from another run may not install over a previous debug build. Export bookmarks before uninstalling a debug build. Use the **signed release** APK (`dev.rojink.browser`) to update a signed RojInk or Sipan installation in place. Do not uninstall it first. The database migration keeps bookmarks, history, download records and the text cache.
@@ -28,6 +28,8 @@ Use the repository's **Settings → Secrets and variables → Actions → New re
 | `ANDROID_KEY_PASSWORD` | The signing key's password (often the same as the store password for PKCS#12) |
 
 On `arena/1fef4dd4-browser-translator`, a trusted push whose head commit message contains `[signed-apk]` requests a signed build. Regular pushes only build the debug APK. When the workflow is on the default branch, you can also go to **Actions → Build Android APK → Run workflow** and check **Also build the signed release APK**. The signing step reconstructs the keystore in a temporary file, deletes it at exit, verifies the APK with `apksigner`, and uploads **sipan-signed-release.apk**. Keep the same app ID and key for future releases; successful runs increase the APK version code with the workflow run number.
+
+For a public download, after the signed build and Android smoke tests pass for the same commit, push a commit with `[publish-apk:BUILD_RUN_ID]` on its own message line. Use the numeric ID from the signed build’s `/actions/runs/…` URL. The publish workflow verifies the APK’s checksum, signature and application ID, publishes that exact APK under the version’s GitHub release, and checks that the asset downloads without authentication. It does not rebuild or access the signing key. Bump `versionName` for a new public release instead of replacing a published version.
 
 ## Search the web or this device
 
