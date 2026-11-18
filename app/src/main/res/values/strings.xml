@@ -130,7 +130,9 @@
     <string name="save_original_image">Save original image</string>
     <string name="image_options">Image options</string>
     <string name="open_image">Open image</string>
-    <string name="search_open_image_tip">Touch and hold an image to open it directly.</string>
+    <string name="search_open_images_directly">Open images directly</string>
+    <string name="search_tap_image">Tap a picture to open it.</string>
+    <string name="search_image_unavailable">Wait for the image results to load, then try again.</string>
     <string name="home_kicker">THE READING BROWSER</string>
     <string name="paste_open">Paste &amp; open</string>
     <string name="paste_missing">Copy a web link first, or type one here.</string>

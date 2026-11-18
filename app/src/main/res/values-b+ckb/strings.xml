@@ -130,7 +130,9 @@
     <string name="save_original_image">پاشەکەوتکردنی وێنەی ڕەسەن</string>
     <string name="image_options">هەڵبژاردنەکانی وێنە</string>
     <string name="open_image">کردنەوەی وێنە</string>
-    <string name="search_open_image_tip">دەست لەسەر وێنەکە ڕابگرە بۆ کردنەوەی ڕاستەوخۆ.</string>
+    <string name="search_open_images_directly">کردنەوەی ڕاستەوخۆی وێنەکان</string>
+    <string name="search_tap_image">لە وێنەیەک بدە بۆ کردنەوەی.</string>
+    <string name="search_image_unavailable">چاوەڕێ بکە تا ئەنجامەکانی وێنە بار دەبن، پاشان دووبارە هەوڵ بدەرەوە.</string>
     <string name="home_kicker">وێبگەڕی خوێندنەوە</string>
     <string name="paste_open">لینک بلکێنە و بیکەرەوە</string>
     <string name="paste_missing">سەرەتا لینکێک کۆپی بکە، یان لێرە بینووسە.</string>

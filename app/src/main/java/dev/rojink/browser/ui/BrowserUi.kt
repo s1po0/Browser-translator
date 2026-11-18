@@ -57,6 +57,7 @@ import dev.rojink.browser.R
 import dev.rojink.browser.RojInkApp
 import dev.rojink.browser.data.BrowserSettings
 import dev.rojink.browser.search.AddressSearchMode
+import dev.rojink.browser.search.WebSearchCategory
 import dev.rojink.browser.search.WebSearchFilters
 import dev.rojink.browser.search.WebSearchRequest
 import dev.rojink.browser.search.forTab
@@ -237,7 +238,11 @@ private enum class Screen(val title: Int) {
                 }
                 if (webSearch != null) WebSearchBar(webSearch, webFilters, ::configureSearch,
                     onEdit = { showSearch(webSearch) }, onCategory = { searchWeb(webSearch.inCategory(it)) },
-                    onDevice = { searchDevice(webSearch.query) })
+                    onDevice = { searchDevice(webSearch.query) }, directImageMode = tab.directImagePage == tab.address,
+                    onDirectImages = if (webSearch.category == WebSearchCategory.IMAGES && !tab.failed) ({
+                        hideKeyboard()
+                        browser.toggleDirectSearchImages()
+                    }) else null)
                 if (tab.progress < 100) LinearProgressIndicator(progress = { tab.progress / 100f }, modifier = Modifier.fillMaxWidth())
                 if (tab.find) FindBar(browser, tab)
                 translationBar()

@@ -173,6 +173,7 @@ internal data class SearchLaunch(val request: WebSearchRequest = WebSearchReques
 
 @Composable internal fun WebSearchBar(request: WebSearchRequest, filters: WebSearchFilters, onFilters: () -> Unit,
     onEdit: () -> Unit, onCategory: (WebSearchCategory) -> Unit, onDevice: () -> Unit,
+    directImageMode: Boolean, onDirectImages: (() -> Unit)?,
 ) {
     val palette = MaterialTheme.colorScheme
     Surface(color = palette.surfaceContainer, modifier = Modifier.fillMaxWidth().testTag("sipan-web-context")) {
@@ -190,9 +191,12 @@ internal data class SearchLaunch(val request: WebSearchRequest = WebSearchReques
             }
             SearchCategories(request.category, "sipan-result", onSelect = { if (it != request.category) onCategory(it) })
             WebFiltersButton(filters, onFilters, Modifier.fillMaxWidth())
-            if (request.category == WebSearchCategory.IMAGES) {
-                Text(tr(R.string.search_open_image_tip), Modifier.padding(top = 3.dp),
-                    style = MaterialTheme.typography.labelSmall, color = palette.onSurfaceVariant)
+            if (onDirectImages != null) Row(verticalAlignment = Alignment.CenterVertically) {
+                if (directImageMode) Text(tr(R.string.search_tap_image), Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodySmall, color = palette.onSurfaceVariant)
+                TextButton(onClick = onDirectImages, modifier = Modifier.testTag("sipan-direct-images")) {
+                    Text(tr(if (directImageMode) R.string.cancel else R.string.search_open_images_directly))
+                }
             }
         }
     }
