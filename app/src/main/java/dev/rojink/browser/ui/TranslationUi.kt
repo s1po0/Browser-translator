@@ -112,6 +112,7 @@ import dev.rojink.browser.translation.ReaderOptions
                         status.busyText -> tr(R.string.translating)
                         status.discovered > status.completed -> tr(R.string.image_progress, status.completed, status.discovered)
                         status.imageErrors > 0 -> tr(R.string.image_error)
+                        status.keptImageText -> tr(R.string.image_text_kept)
                         else -> tr(R.string.translation_ready)
                     }
                     Text(detail, style = MaterialTheme.typography.bodySmall, maxLines = if (status.error != 0) 3 else 2, overflow = TextOverflow.Ellipsis)

@@ -79,9 +79,11 @@ internal class GallerySession(
         job = browser.scope.launch {
             try {
                 val result = pipeline.gallery(data, options, providers.get(privateGallery, options.useVision), privateGallery)
-                if (id != revision) { result?.recycle(); return@launch }
-                if (result == null) { error = R.string.no_image_text; after = null; original = true }
-                else { after = result; original = false }
+                if (id != revision) { result.bitmap?.recycle(); return@launch }
+                after = result.bitmap
+                original = after == null
+                if (result.keptText) error = R.string.image_text_kept
+                else if (after == null) error = R.string.no_image_text
             } catch (e: CancellationException) { throw e }
             catch (e: HttpFailure) { if (id == revision) error = R.string.translate_error }
             catch (_: Exception) { if (id == revision) error = R.string.photo_error }

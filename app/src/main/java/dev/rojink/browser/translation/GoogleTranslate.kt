@@ -193,7 +193,10 @@ private fun batches(values: List<String>, maxSize: Int, maxCount: Int): List<Lis
     if (current.isNotEmpty()) add(current)
 }
 
-class TextCache(private val dao: BrowserDao, private val delegate: TranslationProvider, private val namespace: String) : TranslationProvider {
+class TextCache(
+    private val dao: BrowserDao, private val delegate: TranslationProvider, private val namespace: String,
+    private val cacheable: (before: String, after: String, source: String, target: String) -> Boolean = { _, _, _, _ -> true },
+) : TranslationProvider {
     override suspend fun translate(texts: List<String>, source: String, target: String): List<String> {
         val keys = texts.filter(String::isNotBlank).distinct().associateWith { sha256("$namespace\u0000$source\u0000$target\u0000$it".toByteArray()) }
         if (keys.isEmpty()) return texts
@@ -203,10 +206,11 @@ class TextCache(private val dao: BrowserDao, private val delegate: TranslationPr
             val entries = missing.entries.toList()
             val translated = delegate.translate(entries.map { it.key }, source, target)
             if (translated.size != entries.size) throw ResponseFailure()
-            val additions = entries.zip(translated).map { (entry, output) -> CachedText(entry.value, output) }
-            dao.putCached(additions)
-            dao.trimCached()
-            additions.forEach { saved[it.key] = it.value }
+            val additions = entries.zip(translated).mapNotNull { (entry, output) ->
+                saved[entry.value] = output
+                CachedText(entry.value, output).takeIf { cacheable(entry.key, output, source, target) }
+            }
+            if (additions.isNotEmpty()) { dao.putCached(additions); dao.trimCached() }
         }
         return texts.map { saved[keys[it]] ?: it }
     }

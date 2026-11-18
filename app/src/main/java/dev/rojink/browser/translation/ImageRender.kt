@@ -22,15 +22,25 @@ private val naskhTargets = setOf("ckb", "ar", "fa", "ps", "ur", "sd", "ug", "ks"
 internal class ImageRenderer(private val context: Context) {
     private val naskh by lazy { ResourcesCompat.getFont(context, R.font.noto_naskh_arabic) ?: Typeface.DEFAULT }
 
-    fun paint(bitmap: Bitmap, units: List<TextUnit>, translated: List<String>, protected: List<Box>, target: String, comic: Boolean = false): Int {
+    fun paint(
+        bitmap: Bitmap, input: List<TextUnit>, translated: List<String>, protected: List<Box>, target: String,
+        comic: Boolean = false, bubbles: List<ComicBubble> = emptyList(),
+    ): Int {
         val canvas = Canvas(bitmap)
-        val surface = ComicSurface(bitmap).takeIf { comic }
+        val surface = if (comic) ComicSurface(bitmap, bubbles) else null
+        val units = if (surface == null) input else input.map { unit ->
+            if (unit.vertical) unit else {
+                val ink = unit.lines.map(surface::inkBounds)
+                unit.copy(lines = ink, box = ink.reduce(Box::union))
+            }
+        }
+        val drawnAreas = mutableListOf<Box>()
         var count = 0
         units.zip(translated).forEachIndexed { index, (unit, value) ->
             if (value.isBlank() || value.trim() == unit.text.trim()) return@forEachIndexed
             val original = unit.box.clip(bitmap.width, bitmap.height)
             if (original.width < 5 || original.height < 5 || protected.any { it.overlaps(original) }) return@forEachIndexed
-            val avoid = protected + units.mapIndexedNotNull { i, other -> other.box.takeIf { i != index } }
+            val avoid = protected + drawnAreas + units.mapIndexedNotNull { i, other -> other.box.takeIf { i != index } }
             val margin = (unit.sizeHint * .29f).roundToInt().coerceIn(2, 18)
             val roomy = original.expand(if (unit.vertical) margin * 2 else margin, margin).clip(bitmap.width, bitmap.height)
             val drawBox = if (surface != null && !unit.vertical) surface.fitRoom(original, unit.lines, unit.sizeHint, avoid) ?: original
@@ -65,6 +75,7 @@ internal class ImageRenderer(private val context: Context) {
             paint.color = ink; paint.style = Paint.Style.FILL
             layout.draw(canvas)
             canvas.restore()
+            drawnAreas += drawBox
             count++
         }
         return count

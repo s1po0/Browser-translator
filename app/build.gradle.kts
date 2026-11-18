@@ -16,7 +16,7 @@ android {
         targetSdk = 37
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         versionCode = providers.gradleProperty("rojinkVersionCode").orNull?.toInt() ?: 1
-        versionName = "1.6.0"
+        versionName = "1.7.0"
     }
 
     val keyFile = System.getenv("ANDROID_KEYSTORE_FILE")?.takeIf { it.isNotBlank() }

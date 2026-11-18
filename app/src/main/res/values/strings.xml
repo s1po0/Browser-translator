@@ -121,6 +121,7 @@
     <string name="image_progress">%1$d/%2$d images processed</string>
     <string name="translation_off">Turn off translation</string>
     <string name="translate_error">Translation service unavailable. Try again or check your API key.</string>
+    <string name="image_text_kept">Some image text stayed original.</string>
     <string name="image_error">Some images could not be read or replaced.</string>
     <string name="no_image_text">No clear text was found in this image. Try a different script or a clearer image.</string>
     <string name="photo_error">This image could not be opened or translated.</string>
@@ -171,7 +172,7 @@
     <string name="clear_search_index_body">Removes indexed page text. Keeps bookmarks and history.</string>
     <string name="search_index_cleared">Pages added to search were removed</string>
     <string name="enhanced_ocr">Enhanced image OCR</string>
-    <string name="enhanced_ocr_detail">An extra pass for English comics and small or faded text in Automatic mode. Uses more processing on difficult images.</string>
+    <string name="enhanced_ocr_detail">Rescan missed speech bubbles and refine difficult English lettering. Also helps small or faded text in other scripts.</string>
     <string name="address_device">Enter a link or search this device</string>
     <string name="address_web">Enter a link or search with Brave</string>
     <string name="search_choose_title">Where do you want to search?</string>

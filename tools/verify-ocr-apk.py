@@ -7,9 +7,11 @@ import tempfile
 import zipfile
 
 EXPECTED = {
-    'det.onnx': '193bab7a04fca699a6c82e6abb5b81bdb28177f0abd4062552b04908dafb19f8',
-    'rec.onnx': '9ef676d6ed3c88256a2d92c640c44f25b0c40947e111b14b8be8f594091563e6',
-    'alphabet.txt': 'c5cbe34ef40c29c4df07ed012bf96569cb69a2d2a01a07027e9f13cb832bd9cd',
+    'ppocrv6-tiny/det.onnx': '193bab7a04fca699a6c82e6abb5b81bdb28177f0abd4062552b04908dafb19f8',
+    'ppocrv6-tiny/rec.onnx': '9ef676d6ed3c88256a2d92c640c44f25b0c40947e111b14b8be8f594091563e6',
+    'ppocrv6-tiny/alphabet.txt': 'c5cbe34ef40c29c4df07ed012bf96569cb69a2d2a01a07027e9f13cb832bd9cd',
+    'ppocrv6-small-latin/rec.onnx': 'f3f055ddd36da6aa4348c35afe6528b17ba86ab002e29ff89498502a827c7be5',
+    'ppocrv6-small-latin/alphabet.txt': '42c8560e1347e913fcf921cbd038dadc847e773f183247cd2e26cac68ab2f914',
 }
 NATIVE = ('libonnxruntime.so', 'libonnxruntime4j_jni.so')
 ABIS = ('arm64-v8a', 'x86_64')
@@ -22,12 +24,12 @@ def alignments(path):
 
 def verify(apk):
     with zipfile.ZipFile(apk) as archive, tempfile.TemporaryDirectory() as directory:
-        root = 'assets/ocr/ppocrv6-tiny/'
+        root = 'assets/ocr/'
         for name, expected in EXPECTED.items():
             digest = hashlib.sha256(archive.read(root + name)).hexdigest()
             if digest != expected:
                 sys.exit(f'Invalid OCR asset {name}: {digest}')
-        for notice in ('ppocrv6-tiny/LICENSE.txt', 'ppocrv6-tiny/NOTICE.txt', 'onnxruntime/LICENSE.txt', 'onnxruntime/ThirdPartyNotices.txt'):
+        for notice in ('ppocrv6-tiny/LICENSE.txt', 'ppocrv6-tiny/NOTICE.txt', 'ppocrv6-small-latin/NOTICE.txt', 'onnxruntime/LICENSE.txt', 'onnxruntime/ThirdPartyNotices.txt'):
             archive.getinfo('assets/ocr/' + notice)
         members = [item for item in archive.infolist() if item.filename.startswith('lib/') and item.filename.endswith('.so')]
         names = {item.filename for item in members}

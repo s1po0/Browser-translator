@@ -7,15 +7,16 @@ import kotlin.math.min
 import kotlin.math.roundToInt
 
 /** DB probability-map postprocessing for roughly horizontal lettering. Bounded and does not need OpenCV. */
-internal fun paddleLineBoxes(map: FloatBuffer, width: Int, height: Int, imageWidth: Int, imageHeight: Int): List<Box> {
+internal fun paddleLineBoxes(map: FloatBuffer, width: Int, height: Int, imageWidth: Int, imageHeight: Int, recover: Boolean = false): List<Box> {
     val count = width * height
     require(width in 1..1024 && height in 1..1024 && map.remaining() == count)
     val scores = FloatArray(count).also { map.get(it) }
     val seen = BooleanArray(count)
     val queue = IntArray(count)
     val candidates = mutableListOf<Pair<Box, Float>>()
+    val threshold = if (recover) .25f else .30f
     for (start in scores.indices) {
-        if (seen[start] || scores[start] <= .30f || !scores[start].isFinite()) continue
+        if (seen[start] || scores[start] <= threshold || !scores[start].isFinite()) continue
         var head = 0
         var end = 1
         queue[0] = start
@@ -36,7 +37,7 @@ internal fun paddleLineBoxes(map: FloatBuffer, width: Int, height: Int, imageWid
             for (ny in maxOf(0, y - 1)..minOf(height - 1, y + 1)) {
                 for (nx in maxOf(0, x - 1)..minOf(width - 1, x + 1)) {
                     val next = ny * width + nx
-                    if (!seen[next] && scores[next] > .30f && scores[next].isFinite()) {
+                    if (!seen[next] && scores[next] > threshold && scores[next].isFinite()) {
                         seen[next] = true
                         queue[end++] = next
                     }
@@ -46,14 +47,16 @@ internal fun paddleLineBoxes(map: FloatBuffer, width: Int, height: Int, imageWid
         val w = right - left
         val h = bottom - top
         val score = sum / end
-        if (w < 5 || h < 3 || w < h * .90f || h > height / 3 || end < maxOf(9, w * h / 5) || score < .53f) continue
+        if (recover) {
+            if (w < 3 || h < 2 || w < h * .30f || h > height / 2 || end < maxOf(6, w * h / 5) || score < .47f) continue
+        } else if (w < 5 || h < 3 || w < h * .55f || h > height / 3 || end < maxOf(9, w * h / 5) || score < .53f) continue
         // Axis-aligned equivalent of DB unclip (area * ratio / perimeter).
         val pad = (1.5f * w * h / (2 * (w + h))).coerceIn(1f, h * 1.2f)
         val box = Box(
             floor((left - pad) * imageWidth / width).toInt(), floor((top - pad) * imageHeight / height).toInt(),
             ceil((right + pad) * imageWidth / width).toInt(), ceil((bottom + pad) * imageHeight / height).toInt(),
         ).clip(imageWidth, imageHeight)
-        if (box.width >= 8 && box.height >= 6) candidates += box to score
+        if (box.width >= 6 && box.height >= 5) candidates += box to score
     }
     val chosen = mutableListOf<Box>()
     for ((box, _) in candidates.sortedByDescending { it.second }) {
@@ -94,8 +97,8 @@ internal fun paddleRead(scores: FloatBuffer, steps: Int, alphabet: List<String>)
 }
 
 /** Round the resized map dimensions to the detector's stride without growing huge/tall inputs. */
-internal fun paddleDimensions(width: Int, height: Int): Pair<Int, Int> {
-    val scale = min(960f / maxOf(width, height), maxOf(1f, 640f / minOf(width, height)))
-    fun align(size: Int) = (((size * scale / 32).roundToInt()) * 32).coerceIn(32, 960)
+internal fun paddleDimensions(width: Int, height: Int, longSide: Int = 960, shortSide: Int = 640): Pair<Int, Int> {
+    val scale = min(longSide.toFloat() / maxOf(width, height), maxOf(1f, shortSide.toFloat() / minOf(width, height)))
+    fun align(size: Int) = (((size * scale / 32).roundToInt()) * 32).coerceIn(32, longSide)
     return align(width) to align(height)
 }

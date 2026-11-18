@@ -1,0 +1,19 @@
+PP-OCRv6 Small Latin refinement — PaddlePaddle / PaddleOCR contributors
+
+Apache License 2.0; see ../ppocrv6-tiny/LICENSE.txt. This is a modified local
+recognition model, not a translation model and not an official Paddle export.
+
+Upstream model: https://huggingface.co/PaddlePaddle/PP-OCRv6_small_rec_onnx
+Source ONNX bytes: rapidocr==3.10.0 PyPI wheel, rapidocr/models/PP-OCRv6_rec_small.onnx
+Source SHA-256: 6f327246b50388f3c176ae304bd95767ea6dc0c9ae92153ef8cbe210b3c14884
+Source redistribution notice: https://github.com/RapidAI/RapidOCR/blob/v3.10.0/python/MODEL_LICENSES.md
+
+Changes: preserve the encoder and slice the final CTC classifier to Latin
+letters, digits, punctuation, currency symbols, space and blank. Output
+probabilities are therefore not directly comparable to the full model's.
+The filtered dictionary is derived from upstream ONNX character metadata.
+No upstream runtime or package code is included. Reproduce the assets with
+repository tool tools/prepare-comic-recognizer.py.
+
+rec.onnx SHA-256: f3f055ddd36da6aa4348c35afe6528b17ba86ab002e29ff89498502a827c7be5
+alphabet.txt SHA-256: 42c8560e1347e913fcf921cbd038dadc847e773f183247cd2e26cac68ab2f914

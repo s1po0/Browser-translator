@@ -54,8 +54,10 @@ internal sealed interface RenderedImage {
     data class Memory(val bytes: ByteArray) : RenderedImage { override fun stream(): InputStream = ByteArrayInputStream(bytes) }
 }
 
+internal data class ImageTranslation(val image: RenderedImage? = null, val keptText: Boolean = false)
+
 internal fun interface PageImageProcessor {
-    suspend fun process(info: ImageWork, options: ReaderOptions, providers: ReaderProviders, privateTab: Boolean): RenderedImage?
+    suspend fun process(info: ImageWork, options: ReaderOptions, providers: ReaderProviders, privateTab: Boolean): ImageTranslation
 }
 
 class PageStatus internal constructor(val options: ReaderOptions, internal val revision: Long, internal val key: String, internal val origin: String) {
@@ -71,6 +73,8 @@ class PageStatus internal constructor(val options: ReaderOptions, internal val r
         internal set
     var imageErrors by mutableIntStateOf(0)
         internal set
+    var keptImageText by mutableStateOf(false)
+        internal set
     internal var job: Job? = null
     internal var active = true
 }
@@ -82,7 +86,8 @@ internal class ProviderFactory(private val dao: BrowserDao, private val keys: Ke
         val engine = if (cloud != null) "google-cloud-v2" else "google-gtx-v1"
         val provider = GoogleTranslateProvider(cloud)
         val buffered = if (privateSession) provider else TextCache(dao, provider, engine)
-        return ReaderProviders(SoraniOutput(buffered), "$engine-sorani-v1", vision, imageTranslator = buffered, imageRetry = provider)
+        val images = if (privateSession) provider else TextCache(dao, provider, "$engine-image-v2", ::validImageTranslation)
+        return ReaderProviders(SoraniOutput(buffered), "$engine-sorani-v1", vision, imageTranslator = images, imageRetry = provider)
     }
 }
 
@@ -181,7 +186,7 @@ class PageTranslator internal constructor(
         val imageJobs = linkedSetOf<Job>()
         val pending = java.util.PriorityQueue<WebImage>(compareBy<WebImage> { it.priority }.thenBy { it.id })
         val seen = mutableSetOf<Int>()
-        val imageResults = mutableMapOf<String, RenderedImage?>()
+        val imageResults = mutableMapOf<String, ImageTranslation>()
         var idle = 0
         while (isActive && current(tab, state)) {
             if (!state.active || state.original) { delay(450); continue }
@@ -237,13 +242,15 @@ class PageTranslator internal constructor(
                 imageJobs += launch {
                     try {
                         if (!current(tab, state) || !state.active) return@launch
-                        val previous = candidate.url.takeIf { it.isNotEmpty() && it in imageResults }
-                        val image = if (previous != null) imageResults[previous] else processImage.process(
+                        val result = imageResults[candidate.url] ?: processImage.process(
                             ImageWork(candidate, page, agent, cookies) { snapshotBitmap(tab, state, web, candidate.id) },
                             state.options, providers, tab.incognito,
                         )
-                        if (candidate.url.isNotEmpty() && image !is RenderedImage.Memory && imageResults.size < 850) imageResults[candidate.url] = image
-                        if (image != null && current(tab, state)) {
+                        if (!current(tab, state)) return@launch
+                        val image = result.image
+                        if (candidate.url.isNotEmpty() && image !is RenderedImage.Memory && imageResults.size < 850) imageResults[candidate.url] = result
+                        if (result.keptText) state.keptImageText = true
+                        if (image != null) {
                             val path = "/.__rojink/${state.key.substringAfterLast('_')}/${candidate.id}.png"
                             val sourceOrigin = webUrl(candidate.url)?.origin()
                             val localOrigin = if (sourceOrigin == null || sourceOrigin == state.origin) state.origin else "https://rojink.invalid"

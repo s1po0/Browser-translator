@@ -72,14 +72,14 @@ class ReaderSmokeTest {
                 val samples = listOf(Triple("jp-comic.png", "ja", "こんにちは"), Triple("kr-comic.png", "ko", "안녕하세요"))
                 for ((asset, script, expected) in samples) {
                     val original = instrumentation.context.assets.open(asset).use { it.readBytes() }
-                    val output = image.gallery(original, ReaderOptions("ckb", false, true, script, false), providers, true)
+                    val output = image.gallery(original, ReaderOptions("ckb", false, true, script, false), providers, true).bitmap
                     assertNotNull("Rendered $script PNG", output)
                     assertTrue("Found $expected via real OCR: ${provider.inputs}", provider.inputs.any { expected in it })
                     output!!.recycle()
                 }
                 val menu = instrumentation.targetContext.assets.open("demo/menu.png").use { it.readBytes() }
                 val before = image.preview(menu)
-                val after = image.gallery(menu, ReaderOptions("ckb", false, true, "latin", false), providers, true)
+                val after = image.gallery(menu, ReaderOptions("ckb", false, true, "latin", false), providers, true).bitmap
                 assertNotNull(after)
                 for (y in 194..432 step 2) for (x in 750..875 step 2) {
                     assertEquals("Menu prices must stay at ($x,$y)", before.getPixel(x, y), after!!.getPixel(x, y))

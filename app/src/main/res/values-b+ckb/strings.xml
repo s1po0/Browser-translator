@@ -121,6 +121,7 @@
     <string name="image_progress">%1$d/%2$d وێنە پرۆسە کرا</string>
     <string name="translation_off">ناچالاککردنی وەرگێڕان</string>
     <string name="translate_error">خزمەتگوزاریی وەرگێڕان بەردەست نییە. دووبارە هەوڵ بدەرەوە یان کلیلەکەت بپشکنە.</string>
+    <string name="image_text_kept">هەندێک دەقی ناو وێنە بە ڕەسەنی مایەوە.</string>
     <string name="image_error">هەندێک وێنە نەخوێندرانەوە یان نەگۆڕدران.</string>
     <string name="no_image_text">نووسینی ڕوون لەم وێنەیە نەدۆزرایەوە. جۆری نووسین بگۆڕە یان وێنەیەکی ڕوونتر تاقی بکەرەوە.</string>
     <string name="photo_error">ئەم وێنەیە نەکرایەوە یان وەرنەگێڕدرا.</string>
@@ -171,7 +172,7 @@
     <string name="clear_search_index_body">دەقی پەڕە زیادکراوەکان دەسڕێتەوە. مێژوو و نیشانەکان دەمێننەوە.</string>
     <string name="search_index_cleared">پەڕە زیادکراوەکانی گەڕان سڕانەوە</string>
     <string name="enhanced_ocr">OCR ـی بەهێزتر</string>
-    <string name="enhanced_ocr_detail">لە دۆخی خۆکاردا، کۆمیکی ئینگلیزی و دەقی بچووک یان کاڵ دووبارە دەخوێنێتەوە. وێنەی دژوار کاتی زیاتر دەخایەنێت.</string>
+    <string name="enhanced_ocr_detail">حەبابە نەخوێندراوەکان و دەقی ئینگلیزیی دژوار دووبارە دەخوێنێتەوە. بۆ دەقی بچووک یان کاڵیش یارمەتیدەرە.</string>
     <string name="address_device">لینک دابنێ یان لە ناو ئامێر بگەڕێ</string>
     <string name="address_web">لینک دابنێ یان بە Brave بگەڕێ</string>
     <string name="search_choose_title">لە کوێ بگەڕێیت؟</string>

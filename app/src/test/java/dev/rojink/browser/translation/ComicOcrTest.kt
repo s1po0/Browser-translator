@@ -73,13 +73,56 @@ class ComicOcrTest {
         assertEquals(listOf("ئامانجم تێکچوو و سەرنجم لەدەست دا.", "تۆ", inputs.last()), translated)
     }
 
-    @Test fun `automatic mode never forces English and retry work is bounded`() = runBlocking {
-        val inputs = listOf("You can wait", "You can go", "You can come", "You can try", "こんにちは")
+    @Test fun `automatic mode stays auto for mixed languages and retry work is bounded`() = runBlocking {
+        val inputs = (1..12).map { "You can try $it" } + listOf("こんにちは", "안녕하세요")
         val base = RecordingTranslator { it }
         val retry = RecordingTranslator { it }
         assertEquals(inputs, translateImageWords(inputs.map(::unit), "ckb", false, base, retry))
         assertEquals(listOf(Call(inputs, "auto", "ckb")), base.calls)
-        assertEquals(inputs.take(3).map { Call(listOf(it), "auto", "ckb") }, retry.calls)
+        assertEquals(inputs.take(8).map { Call(listOf(it), "auto", "ckb") }, retry.calls)
+    }
+
+    @Test fun `a standalone English YOU can be translated locally if Google leaves it unchanged`() = runBlocking {
+        val base = RecordingTranslator { it }
+        val retry = RecordingTranslator { it }
+        assertEquals(listOf("تۆ؟", "نەخێر!"), translateImageWords(listOf(unit("YOU?"), unit("NO!")), "ckb", true, base, retry))
+        assertEquals(listOf("NO!"), translateImageWords(listOf(unit("NO!")), "ckb", false, base, retry))
+        val context = "I THINK WE CAN STILL WIN."
+        assertEquals(listOf(context, "تۆ؟"), translateImageWords(listOf(unit(context), unit("YOU?")), "ckb", false, base, retry))
+        assertTrue(retry.calls.any { it.input == listOf("YOU?") && it.source == "en" })
+    }
+
+    @Test fun `review fixes grounded fused words but does not guess text on an unrelated background`() {
+        val fast = PaddleText("IAM STILL HERE.", .97f)
+        val stronger = PaddleText("I AM STILL HERE.", .97f)
+        assertTrue(needsLatinReview(fast, null, enclosed = true, recovered = false))
+        assertTrue(preferLatinReview(fast, stronger, null))
+        assertFalse(needsLatinReview(PaddleText("z1", .6f), null, enclosed = false, recovered = false))
+        assertFalse(preferLatinReview(PaddleText("YOU", .99f), PaddleText("TRY", .99f), null))
+    }
+
+    @Test fun `an enclosure permits wider leading and blocks merging a neighboring balloon`() {
+        val first = line("I…", 15, 10, 1)
+        val second = line("I MISSED YOU.", 15, 66, 2)
+        val third = line("I AM HERE.", 15, 96, 2)
+        val firstBubble = ComicBubble(Box(3, 5, 153, 93), listOf(first.box, second.box), false)
+        val other = ComicBubble(Box(4, 95, 146, 130), listOf(third.box), false)
+        val layout = groupForImage(OcrPage(listOf(first, second, third), false, comic = true, bubbles = listOf(firstBubble, other)))
+        assertEquals(listOf("I… I MISSED YOU.", "I AM HERE."), layout.units.map { it.text })
+    }
+
+    @Test fun `proposes an enclosed faint line even when averaged pixels hide it`() {
+        val width = 52
+        val height = 85
+        val background = IntArray(width * height) { 139 }
+        for (y in 15..29) for (x in 9..30) background[y * width + x] = 238
+        val low = background.copyOf()
+        for (y in 21..23) for (x in 14..25 step 2) low[y * width + x] = 160
+        val bubble = findComicBubbles(background, width, height, width * 4, height * 4, low).single()
+        assertEquals(Box(36, 60, 124, 120), bubble.bounds)
+        assertEquals(1, missedBubbleBands(bubble, emptyList()).size)
+        val heard = OcrLine("I WAS WRONG.", bubble.bands.single(), emptyList(), 1, confidence = .95f)
+        assertTrue(missedBubbleBands(bubble, listOf(heard)).isEmpty())
     }
 
     private fun line(text: String, left: Int, top: Int, block: Int = 0) = OcrLine(text, Box(left, top, left + 113, top + 22), emptyList(), block)

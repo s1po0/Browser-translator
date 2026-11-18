@@ -21,7 +21,7 @@ internal data class OcrWord(val text: String, val box: Box)
 internal data class OcrLine(val text: String, val box: Box, val words: List<OcrWord>, val block: Int, val vertical: Boolean = false, val confidence: Float = .70f)
 internal data class OcrPage(
     val lines: List<OcrLine>, val rightFirst: Boolean, val enhancedTiles: Int = 0,
-    val script: Script? = null, val comic: Boolean = false,
+    val script: Script? = null, val comic: Boolean = false, val bubbles: List<ComicBubble> = emptyList(),
 )
 internal data class TextUnit(val text: String, val box: Box, val lines: List<Box>, val sizeHint: Int, val vertical: Boolean)
 internal data class ImageLayout(val units: List<TextUnit>, val protected: List<Box>)
@@ -43,15 +43,20 @@ internal fun groupForImage(page: OcrPage, sameInterior: ((Box, Box) -> Boolean?)
                 abs(label.y - line.box.y) < min(label.height, line.box.height) * .65f
         }
     }.toSet() else emptySet()
+    val bubbles = if (page.comic && page.bubbles.isNotEmpty()) split.associateWith { comicBubbleFor(it.box, page.bubbles) } else emptyMap()
     val groups = mutableListOf<MutableList<OcrLine>>()
     for (line in split.sortedWith(compareBy<OcrLine> { it.box.top }.thenBy { if (page.rightFirst) -it.box.right else it.box.left }).take(320)) {
         val matching = groups.asReversed().firstOrNull { g ->
             if (g.size >= 8 || line in labelRows && g.any { it in labelRows }) return@firstOrNull false
             val previous = g.last()
+            val firstBubble = bubbles[previous]
+            val nextBubble = bubbles[line]
+            if (firstBubble != null && nextBubble != null && firstBubble != nextBubble) return@firstOrNull false
+            val enclosed = firstBubble != null && firstBubble == nextBubble
             val usual = g.any { canGroup(it, line) }
-            val neighboring = page.comic && comicNeighbors(previous, line)
-            val interior = if (neighboring || usual && page.comic && !line.vertical) sameInterior?.invoke(previous.box, line.box) else null
-            (neighboring && interior == true || usual && interior != false) && !g.any { a ->
+            val neighboring = page.comic && comicNeighbors(previous, line, enclosed)
+            val interior = if (!enclosed && (neighboring || usual && page.comic && !line.vertical)) sameInterior?.invoke(previous.box, line.box) else null
+            (neighboring && (enclosed || interior == true) || usual && interior != false) && !g.any { a ->
                 val combined = a.box.union(line.box)
                 protected.any { it.overlaps(combined) }
             }

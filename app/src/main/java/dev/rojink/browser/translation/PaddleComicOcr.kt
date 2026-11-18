@@ -4,6 +4,7 @@ import ai.onnxruntime.OnnxTensor
 import ai.onnxruntime.OrtEnvironment
 import ai.onnxruntime.OrtLoggingLevel
 import ai.onnxruntime.OrtSession
+import android.app.ActivityManager
 import android.content.Context
 import android.graphics.Bitmap
 import kotlinx.coroutines.CancellationException
@@ -16,9 +17,14 @@ import java.nio.Buffer
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.FloatBuffer
+import kotlin.math.abs
 import kotlin.math.ceil
 
 private const val ASSETS = "ocr/ppocrv6-tiny"
+private const val LATIN_ASSETS = "ocr/ppocrv6-small-latin"
+private const val MAX_LINES = 320
+private const val MAX_REFINEMENTS = 8
+private const val MAX_RESCANS = 5
 private const val REC_HEIGHT = 48
 
 /** Local PP-OCRv6 tiny; no model downloads, OCR service, or disk copies of image/text. */
@@ -31,7 +37,9 @@ internal class PaddleComicOcr(private val context: Context) : AutoCloseable {
     // Session ownership is serialized by gate; close defers destruction until the current call releases it.
     private var model: Model? = null
 
-    suspend fun recognize(image: Bitmap): List<OcrLine> = withContext(Dispatchers.Default) {
+    suspend fun recognize(
+        image: Bitmap, baseline: List<OcrLine> = emptyList(), bubbles: List<ComicBubble> = emptyList(), refine: Boolean = false,
+    ): List<OcrLine> = withContext(Dispatchers.Default) {
         gate.withLock {
             synchronized(life) {
                 if (closed || unavailable) return@withLock emptyList()
@@ -43,23 +51,45 @@ internal class PaddleComicOcr(private val context: Context) : AutoCloseable {
                 catch (_: Exception) { unavailable = true; return@withLock emptyList() }
                 catch (_: LinkageError) { unavailable = true; return@withLock emptyList() }
                 val result = mutableListOf<OcrLine>()
-                for ((tileIndex, tile) in ocrTiles(image.width, image.height).withIndex()) {
+                var budget = if (refine) MAX_REFINEMENTS else 0
+                var id = 1_000_000
+                fun read(box: Box, region: ComicBubble?, recovered: Boolean) {
+                    if (result.size >= MAX_LINES || box.width < 6 || box.height < 5) return
                     ensureActive()
-                    if (result.size >= 320) break
-                    val crop = Bitmap.createBitmap(image, tile.left, tile.top, tile.width, tile.height)
-                    try {
-                        val boxes = active.detect(crop)
-                        for ((index, box) in boxes.withIndex()) {
-                            if (result.size >= 320) break
-                            ensureActive()
-                            val text = active.read(crop, box)
-                            if (text.confidence >= .62f && text.value.length in 1..280 && text.value.any(Char::isLetterOrDigit)) {
-                                val bounds = box.moved(tile.left, tile.top)
-                                mergeOcrLines(result, listOf(OcrLine(text.value, bounds, emptyList(),
-                                    1_000_000 + tileIndex * 1000 + index, confidence = text.confidence)))
-                            }
+                    val tiny = active.read(image, box)
+                    val base = baseline.firstOrNull { abs(it.box.y - box.y) < box.height * .45f && areaOverlap(it.box, box) > .69 }
+                    val needsReview = budget > 0 && needsLatinReview(tiny, base, region != null, recovered)
+                    val text = if (needsReview) {
+                        budget--
+                        val small = active.refine(image, box)
+                        if (small != null && preferLatinReview(tiny, small, base)) small else tiny
+                    } else tiny
+                    if (text.confidence >= if (recovered) .76f else .62f) {
+                        if (text.value.length in 1..280 && text.value.any(Char::isLetterOrDigit)) {
+                            mergeOcrLines(result, listOf(OcrLine(text.value, box, emptyList(), id++, confidence = text.confidence)))
                         }
-                    } finally { if (crop !== image) crop.recycle() }
+                    }
+                }
+                for (tile in ocrTiles(image.width, image.height)) {
+                    ensureActive()
+                    if (result.size >= MAX_LINES) break
+                    for (box in detectRegion(active, image, tile, false)) {
+                        if (result.size >= MAX_LINES) break
+                        read(box, comicBubbleFor(box, bubbles), false)
+                    }
+                }
+                val seen = baseline + result
+                val recoveries = bubbles.mapNotNull { bubble ->
+                    missedBubbleBands(bubble, seen).takeIf { it.isNotEmpty() }?.let { bubble to it }
+                }.sortedByDescending { it.second.size }.take(MAX_RESCANS)
+                for ((bubble, missed) in recoveries) {
+                    ensureActive()
+                    val proposals = detectRegion(active, image, bubble.bounds, true).filter { box ->
+                        missed.any { band -> abs(box.y - band.y) <= maxOf(box.height, band.height) * .68f && areaOverlap(box, band) > .30 }
+                    }.take(12)
+                    for (box in proposals) read(box, bubble, true)
+                    // Some tiny lines never cross the DB threshold, even at crop scale. Try only the isolated ink bands.
+                    missedBubbleBands(bubble, baseline + result).take(3).forEach { box -> read(box, bubble, true) }
                 }
                 result
             } finally {
@@ -72,6 +102,12 @@ internal class PaddleComicOcr(private val context: Context) : AutoCloseable {
         }
     }
 
+    private fun detectRegion(active: Model, image: Bitmap, area: Box, recover: Boolean): List<Box> {
+        val crop = Bitmap.createBitmap(image, area.left, area.top, area.width, area.height)
+        return try { active.detect(crop, recover).map { it.moved(area.left, area.top) } }
+        finally { if (crop !== image) crop.recycle() }
+    }
+
     override fun close() {
         val retired = synchronized(life) {
             closed = true
@@ -80,13 +116,17 @@ internal class PaddleComicOcr(private val context: Context) : AutoCloseable {
         retired?.close()
     }
 
-    private class Model(context: Context) : AutoCloseable {
-        private val alphabet = context.assets.open("$ASSETS/alphabet.txt").bufferedReader(Charsets.UTF_8).use { it.readLines() } + " "
+    private class Model(private val context: Context) : AutoCloseable {
+        private fun alphabet(dir: String) = context.assets.open("$dir/alphabet.txt").bufferedReader(Charsets.UTF_8).use { it.readLines() } + " "
+        private val alphabet = alphabet(ASSETS)
         private val env = OrtEnvironment.getEnvironment().also { it.setTelemetry(false) }
         private val det = InferenceSession(env, context, "$ASSETS/det.onnx")
         private val rec = try { InferenceSession(env, context, "$ASSETS/rec.onnx") }
         catch (failure: Throwable) { det.close(); throw failure }
         private var storage: FloatBuffer? = null
+        private var small: InferenceSession? = null
+        private var smallAlphabet = emptyList<String>()
+        private var smallDisabled = context.getSystemService(ActivityManager::class.java)?.let { it.isLowRamDevice || it.memoryClass < 96 } == true
 
         private fun inputBuffer(width: Int, height: Int): FloatBuffer {
             val size = width * height * 3
@@ -98,22 +138,37 @@ internal class PaddleComicOcr(private val context: Context) : AutoCloseable {
             return input
         }
 
-        fun detect(image: Bitmap): List<Box> {
-            val (w, h) = paddleDimensions(image.width, image.height)
+        fun detect(image: Bitmap, recover: Boolean): List<Box> {
+            val (w, h) = if (recover) paddleDimensions(image.width, image.height, 640, 480) else paddleDimensions(image.width, image.height)
             val input = inputBuffer(w, h)
             fillTensor(image, null, w, h, w, detection = true, values = input)
             return evaluate(det, input, w, h) { map, shape ->
                 check(shape.size in 3..4 && shape[shape.lastIndex - 1] == h.toLong() && shape.last() == w.toLong())
-                paddleLineBoxes(map, w, h, image.width, image.height)
+                paddleLineBoxes(map, w, h, image.width, image.height, recover)
             }
         }
 
-        fun read(image: Bitmap, box: Box): PaddleText {
+        fun read(image: Bitmap, box: Box): PaddleText = read(image, box, rec, alphabet)
+
+        fun refine(image: Bitmap, box: Box): PaddleText? {
+            if (smallDisabled) return null
+            return try {
+                val session = small ?: run {
+                    smallAlphabet = alphabet(LATIN_ASSETS)
+                    InferenceSession(env, context, "$LATIN_ASSETS/rec.onnx").also { small = it }
+                }
+                read(image, box, session, smallAlphabet)
+            } catch (e: CancellationException) { throw e }
+            catch (_: Exception) { smallDisabled = true; null }
+            catch (_: LinkageError) { smallDisabled = true; null }
+        }
+
+        private fun read(image: Bitmap, box: Box, recognizer: InferenceSession, alphabet: List<String>): PaddleText {
             val content = ceil(REC_HEIGHT * box.width.toDouble() / box.height).toInt().coerceIn(1, 1024)
-            val width = maxOf(320, content)
+            val width = (((content + 31) / 32 + 1) * 32).coerceIn(96, 1024)
             val input = inputBuffer(width, REC_HEIGHT)
             fillTensor(image, box, content, REC_HEIGHT, width, detection = false, values = input)
-            return evaluate(rec, input, width, REC_HEIGHT) { out, shape ->
+            return evaluate(recognizer, input, width, REC_HEIGHT) { out, shape ->
                 check(shape.size == 3 && shape[0] == 1L && shape[2] == alphabet.size + 1L)
                 paddleRead(out, shape[1].toInt(), alphabet)
             }
@@ -128,7 +183,11 @@ internal class PaddleComicOcr(private val context: Context) : AutoCloseable {
             }
         }
 
-        override fun close() { try { det.close() } finally { rec.close(); storage = null } }
+        override fun close() {
+            try { det.close() } finally {
+                try { rec.close() } finally { small?.close(); storage = null }
+            }
+        }
     }
 }
 

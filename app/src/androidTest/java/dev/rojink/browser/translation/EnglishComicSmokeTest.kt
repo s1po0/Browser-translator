@@ -53,7 +53,7 @@ class EnglishComicSmokeTest {
                 val options = ReaderOptions("ckb", false, true, ENGLISH_COMIC_SCRIPT, false)
                 val providers = ReaderProviders(provider, "english-comic-fixture-v1", null)
                 val before = pipeline.preview(data)
-                val after = pipeline.gallery(data, options, providers, incognito = true)
+                val after = pipeline.gallery(data, options, providers, incognito = true).bitmap
                 assertNotNull("Expected a painted Sorani image; OCR requests: $seen", after)
                 try {
                     assertEquals(listOf(expected), seen)
@@ -83,6 +83,69 @@ class EnglishComicSmokeTest {
         }
     }
 
+    @Test fun rescansTinyLetteringAndRepairsSpacingOnTheSameDifficultPanel() = runBlocking {
+        withTimeout(110_000) {
+            val data = coverageBytes
+            val image = BitmapFactory.decodeByteArray(data, 0, data.size)
+            try {
+                PaddleComicOcr(context).use { ocr ->
+                    val fast = ocr.recognize(image)
+                    val bubbles = comicBubbles(image)
+                    assertTrue("Faint bubble proposal: $bubbles", bubbles.any { it.bounds.x in 470..500 && it.bounds.y in 680..715 })
+                    val recovered = ocr.recognize(image, bubbles = bubbles, refine = true)
+                    val tinyBox = Box(396, 655, 575, 737)
+                    fun readings(lines: List<OcrLine>, box: Box) = lines.filter { it.box.overlaps(box) }.map { it.text }
+                    assertTrue("After crop recovery: ${readings(recovered, tinyBox)}; full panel: ${readings(fast, tinyBox)}",
+                        "I WAS WRONG." in readings(recovered, tinyBox))
+                    assertFalse("Full-panel scan only sees part of this lettering", "I WAS WRONG." in readings(fast, tinyBox))
+                    assertTrue("Dark bubble: ${readings(recovered, Box(40, 835, 340, 968))}",
+                        recovered.any { it.box.y in 884..924 && it.text == "I AM STILL HERE." })
+                }
+            } finally { image.recycle() }
+        }
+    }
+
+    @Test fun recoveredAndUnchangedYouDialogueActuallyPaintWithoutMovingLiterals() = runBlocking {
+        withTimeout(110_000) {
+            val data = coverageBytes
+            val seen = mutableListOf<String>()
+            val provider = object : TranslationProvider {
+                override suspend fun translate(texts: List<String>, source: String, target: String): List<String> {
+                    seen += texts
+                    return texts.map { item -> when {
+                        item.trim() == "YOU?" -> item // Also unchanged on the single retry; use the exact local fallback.
+                        "I WAS WRONG." in item -> "من هەڵەم کرد."
+                        else -> "دەگەڕێمەوە."
+                    } }
+                }
+            }
+            ImagePipeline(context).use { pipeline ->
+                val before = pipeline.preview(data)
+                val result = pipeline.gallery(data, ReaderOptions("ckb", false, true, ENGLISH_COMIC_SCRIPT, false),
+                    ReaderProviders(provider, "english-coverage-fixture", null), true)
+                val after = result.bitmap
+                assertNotNull("Rendered difficult English panel: $seen", after)
+                try {
+                    assertTrue("Inputs: $seen", seen.any { "I WAS WRONG." in it })
+                    assertTrue("Inputs: $seen", seen.count { it == "YOU?" } >= 2)
+                    assertTrue("Literals are not sent as dialogue: $seen", seen.none { "$7.25" in it || "example.com" in it })
+                    for (box in listOf(Box(398, 46, 592, 119), Box(405, 662, 565, 730))) {
+                        var changed = 0
+                        for (y in box.top until box.bottom) for (x in box.left until box.right) {
+                            if (before.getPixel(x, y) != after!!.getPixel(x, y)) changed++
+                        }
+                        assertTrue("Ink changed in $box ($changed pixels)", changed > 25)
+                    }
+                    for (box in listOf(Box(560, 1810, 797, 1963), Box(890, 1870, 1221, 1961))) {
+                        for (y in box.top until box.bottom step 2) for (x in box.left until box.right step 2) {
+                            assertEquals("Literal pixel at ($x, $y)", before.getPixel(x, y), after!!.getPixel(x, y))
+                        }
+                    }
+                } finally { before.recycle(); after?.recycle() }
+            }
+        }
+    }
+
     @Test fun aDarkOutlineKeepsStackedBubblesSeparate() {
         val bitmap = Bitmap.createBitmap(180, 150, Bitmap.Config.ARGB_8888)
         try {
@@ -96,5 +159,6 @@ class EnglishComicSmokeTest {
         } finally { bitmap.recycle() }
     }
 
+    private val coverageBytes get() = instrumentation.context.assets.open("en-comic-coverage.png").use { it.readBytes() }
     private val bytes get() = instrumentation.context.assets.open("en-comic.png").use { it.readBytes() }
 }
