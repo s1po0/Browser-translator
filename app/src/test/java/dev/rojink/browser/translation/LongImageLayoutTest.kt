@@ -1,0 +1,44 @@
+package dev.rojink.browser.translation
+
+import org.junit.Assert.*
+import org.junit.Test
+
+class LongImageLayoutTest {
+    @Test fun `long strip keeps source text pixels and fits the final raster in memory`() {
+        val original = RasterSize(1440, 12288)
+        assertEquals(4, imageSample(original))
+        val plan = requireNotNull(planLongImage(original))
+        assertEquals(original, plan.scan)
+        assertEquals(1, plan.sample)
+        assertTrue(plan.output.width > original.width / 4)
+        assertTrue(plan.output.edge <= IMAGE_MAX_EDGE && plan.output.area <= IMAGE_MAX_PIXELS)
+        assertEquals(0, plan.windows.first().coreTop)
+        assertEquals(original.height, plan.windows.last().coreBottom)
+        for ((a, b) in plan.windows.zipWithNext()) {
+            assertEquals(a.coreBottom, b.coreTop)
+            assertTrue(a.bottom - b.top >= 400)
+        }
+        assertTrue(plan.windows.all { it.height * plan.scan.width <= LONG_MAX_WINDOW_PIXELS && it.height <= 2080 })
+    }
+
+    @Test fun `normal photos retain their existing path and excessive strips have a second work budget`() {
+        assertNull(planLongImage(RasterSize(1440, 2016)))
+        assertNull(planLongImage(RasterSize(3000, 3300)))
+        val huge = requireNotNull(planLongImage(RasterSize(2880, 72_100)))
+        assertTrue(huge.sample > 1 && huge.scan.area <= 34_000_000)
+        assertTrue(huge.windows.size <= 32 && huge.output.area <= IMAGE_MAX_PIXELS)
+        assertEquals(huge.scan.height, huge.windows.last().coreBottom)
+    }
+
+    @Test fun `overlap chooses the complete bubble and not duplicates of separate neighboring dialogue`() {
+        val upper = Box(31, 1434, 115, 1454)
+        val lower = Box(22, 1462, 126, 1483)
+        val whole = TextUnit("I WILL WAIT HERE.", upper.union(lower), listOf(upper, lower), 20, false)
+        val partial = TextUnit("WAIT HERE.", lower.expand(2, 1), listOf(lower.expand(2, 1)), 22, false)
+        val separate = partial.movedY(46)
+        val first = StripReading(whole, 0, 55, false, false)
+        val duplicate = StripReading(partial, 1, 7, true, false)
+        val neighbor = StripReading(separate, 1, 64, true, false)
+        assertEquals(listOf(first, neighbor), resolveStripReadings(listOf(duplicate, first, neighbor)))
+    }
+}

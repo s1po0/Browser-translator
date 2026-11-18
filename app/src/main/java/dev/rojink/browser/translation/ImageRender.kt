@@ -20,6 +20,9 @@ private val naskhTargets = setOf("ckb", "ar", "fa", "ps", "ur", "sd", "ug", "ks"
 
 internal enum class PaintDecision { UNCHANGED, PROTECTED, COLLISION, NO_ROOM, DRAWN }
 
+/** Optional canvas transformed to a native strip, with collision guards from neighboring strips. */
+internal data class PaintDestination(val canvas: Canvas, val obstacles: List<Box>, val scale: Float, val occupy: (Box) -> Unit)
+
 /** Rewrite only OCR boxes, leaving numbers, surrounding illustration, and the page layout in place. */
 internal class ImageRenderer(private val context: Context) {
     private val naskh by lazy { ResourcesCompat.getFont(context, R.font.noto_naskh_arabic) ?: Typeface.DEFAULT }
@@ -27,8 +30,9 @@ internal class ImageRenderer(private val context: Context) {
     fun paint(
         bitmap: Bitmap, input: List<TextUnit>, translated: List<String>, protected: List<Box>, target: String,
         comic: Boolean = false, bubbles: List<ComicBubble> = emptyList(), onDecision: ((Box, PaintDecision) -> Unit)? = null,
+        destination: PaintDestination? = null,
     ): Int {
-        val canvas = Canvas(bitmap)
+        val canvas = destination?.canvas ?: Canvas(bitmap)
         val surface = if (comic) ComicSurface(bitmap, bubbles) else null
         val units = if (surface == null) input else input.map { unit ->
             if (unit.vertical) unit else {
@@ -44,7 +48,7 @@ internal class ImageRenderer(private val context: Context) {
             val original = unit.box.clip(bitmap.width, bitmap.height)
             if (original.width < 5 || original.height < 5) { report(PaintDecision.NO_ROOM); return@forEachIndexed }
             if (protected.any { it.overlaps(original) }) { report(PaintDecision.PROTECTED); return@forEachIndexed }
-            val avoid = protected + drawnAreas + units.mapIndexedNotNull { i, other -> other.box.takeIf { i != index } }
+            val avoid = protected + drawnAreas + destination?.obstacles.orEmpty() + units.mapIndexedNotNull { i, other -> other.box.takeIf { i != index } }
             if (unit.lines.any { line -> avoid.any { it.overlaps(line) } }) { report(PaintDecision.COLLISION); return@forEachIndexed }
             val erase = unit.lines.map { line ->
                 val padded = line.expand(2, 2).clip(bitmap.width, bitmap.height)
@@ -58,7 +62,10 @@ internal class ImageRenderer(private val context: Context) {
             val paint = TextPaint(Paint.ANTI_ALIAS_FLAG or Paint.SUBPIXEL_TEXT_FLAG).apply {
                 typeface = if (target in naskhTargets) naskh else Typeface.create("sans-serif", Typeface.NORMAL)
             }
-            val layout = fitted(value.trim(), paint, drawBox, unit.sizeHint, rtl)
+            val preferredMin = if (surface != null && drawBox != original && destination != null) {
+                (8f / destination.scale).coerceIn(8f, 15f)
+            } else 8f
+            val layout = fitted(value.trim(), paint, drawBox, unit.sizeHint, rtl, preferredMin)
             if (layout == null) { report(PaintDecision.NO_ROOM); return@forEachIndexed }
             val tones = erase.map { it to borderTone(bitmap, it) }
             val (background, noisy) = borderTone(bitmap, original)
@@ -81,14 +88,15 @@ internal class ImageRenderer(private val context: Context) {
             layout.draw(canvas)
             canvas.restore()
             drawnAreas += drawBox
+            destination?.occupy?.invoke(erase.fold(drawBox, Box::union))
             count++
             report(PaintDecision.DRAWN)
         }
         return count
     }
 
-    private fun fitted(text: String, paint: TextPaint, area: Box, sizeHint: Int, rtl: Boolean): StaticLayout? {
-        var size = (sizeHint * if (rtl) 1.17f else 1.04f).coerceIn(8f, 116f)
+    private fun fitted(text: String, paint: TextPaint, area: Box, sizeHint: Int, rtl: Boolean, preferredMin: Float): StaticLayout? {
+        var size = (sizeHint * if (rtl) 1.17f else 1.04f).coerceIn(preferredMin, 116f)
         repeat(20) {
             paint.textSize = size
             val layout = StaticLayout.Builder.obtain(text, 0, text.length, paint, area.width.coerceAtLeast(1))

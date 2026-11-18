@@ -32,8 +32,8 @@ import java.util.concurrent.TimeUnit
 import kotlin.coroutines.coroutineContext
 
 private const val INPUT_LIMIT = 14 * 1024 * 1024
-private const val MAX_PIXELS = 4_100_000L
-private const val MAX_EDGE = 8200
+// A tall strip owns a canvas plus one detailed decode. Avoid several such scans competing for RAM.
+private val longImageSlot = Semaphore(1)
 private val budgetLock = Any()
 private lateinit var sharedSlots: Semaphore
 private fun imageSlots(context: Context): Semaphore = synchronized(budgetLock) {
@@ -148,7 +148,7 @@ internal class ImagePipeline(
         stream.use { readLimited(it, INPUT_LIMIT) }
     }
 
-    suspend fun preview(bytes: ByteArray): Bitmap = withContext(Dispatchers.Default) { decode(bytes) }
+    suspend fun preview(bytes: ByteArray): Bitmap = withContext(Dispatchers.Default) { decode(bytes, imageInfo(bytes)) }
 
     suspend fun gallery(input: ByteArray, options: ReaderOptions, providers: ReaderProviders, incognito: Boolean): GalleryImage = slots.withPermit {
         when (val frame = prepare(input, options, providers, "", !incognito)) {
@@ -178,10 +178,16 @@ internal class ImagePipeline(
         val vision = providers.visionKey
         val key = if (save) withContext(Dispatchers.Default) {
             val langHint = language.lowercase().take(16)
-            sha256("sipan-image-v4:${sha256(input)}:${options.target}:${options.script}:${options.enhancedOcr}:$langHint:${providers.variant}:${vision != null}".toByteArray())
+            sha256("sipan-image-v5:${sha256(input)}:${options.target}:${options.script}:${options.enhancedOcr}:$langHint:${providers.variant}:${vision != null}".toByteArray())
         } else null
         if (key != null) cache.get(key)?.let { return ImageFrame.Cached(it) }
-        val bitmap = timed("decode") { withContext(Dispatchers.Default) { decode(input) } }
+        val info = withContext(Dispatchers.Default) { imageInfo(input) }
+        if (vision == null && info.orientation == ExifInterface.ORIENTATION_NORMAL &&
+            info.mime in setOf("image/jpeg", "image/png", "image/webp")) {
+            val plan = planLongImage(info.size)
+            if (plan != null) longImageSlot.withPermit { prepareLong(input, plan, hint, options, providers, key) }?.let { return it }
+        }
+        val bitmap = timed("decode") { withContext(Dispatchers.Default) { decode(input, info) } }
         var display = false
         try {
             if (bitmap.width < 80 || bitmap.height < 80) return ImageFrame.Original()
@@ -210,19 +216,50 @@ internal class ImagePipeline(
         } finally { if (!display) bitmap.recycle() }
     }
 
+    private suspend fun prepareLong(
+        input: ByteArray, plan: LongImagePlan, hint: OcrHint, options: ReaderOptions, providers: ReaderProviders, key: String?,
+    ): ImageFrame? = withContext(Dispatchers.Default) {
+        val source = LongImageOcr.open(input, plan) ?: return@withContext null
+        source.use {
+            val bitmap = Bitmap.createBitmap(plan.output.width, plan.output.height, Bitmap.Config.ARGB_8888)
+            var display = false
+            try {
+                val scan = timed("strip OCR") { source.scan(bitmap, onDevice, hint) } ?: return@withContext null
+                if (scan.readings.isEmpty()) return@withContext ImageFrame.Original(keptText = scan.suspectedMiss)
+                val translations = timed("translate") {
+                    translateImageWords(scan.readings.map { it.unit }, options.target, options.script == ENGLISH_COMIC_SCRIPT,
+                        providers.imageTranslator, providers.imageRetry)
+                }
+                val drawn = timed("strip paint") {
+                    source.paint(bitmap, scan, translations.map { it.take(2000) }, options.target, renderer, paintDecision)
+                }
+                val kept = scan.truncated || drawn < scan.readings.size
+                if (drawn == 0) return@withContext ImageFrame.Original(keptText = kept)
+                ensureActive()
+                display = true
+                ImageFrame.Painted(bitmap, key.takeUnless { kept || scan.suspectedMiss }, kept)
+            } finally { if (!display) bitmap.recycle() }
+        }
+    }
+
+    private data class ImageInfo(val size: RasterSize, val mime: String?, val orientation: Int)
+
     @Suppress("DEPRECATION")
-    private fun decode(data: ByteArray): Bitmap {
+    private fun imageInfo(data: ByteArray): ImageInfo {
         val info = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeByteArray(data, 0, data.size, info)
         if (info.outWidth <= 0 || info.outHeight <= 0) throw IOException("Unsupported image format")
-        var sample = 1
-        while ((info.outWidth / sample).toLong() * (info.outHeight / sample) > MAX_PIXELS ||
-            maxOf(info.outWidth / sample, info.outHeight / sample) > MAX_EDGE) sample *= 2
-        val options = BitmapFactory.Options().apply { inSampleSize = sample; inPreferredConfig = Bitmap.Config.ARGB_8888; inMutable = true }
-        val raw = BitmapFactory.decodeByteArray(data, 0, data.size, options) ?: throw IOException("Could not decode image")
         val orientation = if (info.outMimeType == "image/jpeg") runCatching {
             ExifInterface(ByteArrayInputStream(data)).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
         }.getOrDefault(ExifInterface.ORIENTATION_NORMAL) else ExifInterface.ORIENTATION_NORMAL
+        return ImageInfo(RasterSize(info.outWidth, info.outHeight), info.outMimeType, orientation)
+    }
+
+    private fun decode(data: ByteArray, info: ImageInfo): Bitmap {
+        val sample = imageSample(info.size)
+        val options = BitmapFactory.Options().apply { inSampleSize = sample; inPreferredConfig = Bitmap.Config.ARGB_8888; inMutable = true }
+        val raw = BitmapFactory.decodeByteArray(data, 0, data.size, options) ?: throw IOException("Could not decode image")
+        val orientation = info.orientation
         val rotation = when (orientation) { 3, 4 -> 180f; 5, 6 -> 90f; 7, 8 -> 270f; else -> 0f }
         val flip = orientation in listOf(2, 4, 5, 7)
         if (rotation == 0f && !flip) return raw

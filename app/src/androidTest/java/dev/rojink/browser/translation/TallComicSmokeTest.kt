@@ -3,6 +3,7 @@ package dev.rojink.browser.translation
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
+import android.graphics.Paint
 import android.graphics.Rect
 import android.util.Log
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -10,10 +11,12 @@ import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.ByteArrayOutputStream
+import kotlin.math.roundToInt
 
 @RunWith(AndroidJUnit4::class)
 class TallComicSmokeTest {
@@ -44,33 +47,66 @@ class TallComicSmokeTest {
                 ImagePipeline(instrumentation.targetContext, { stage, ms -> timings[stage] = ms }, { box, decision ->
                     outcomes.add(box to decision)
                 }).use { pipeline ->
-                    suspend fun inspect(input: ByteArray, width: Int, height: Int, copies: Int): Pair<Int, Int> {
+                    suspend fun inspect(input: ByteArray, height: Int, positions: IntArray) {
                         seen.clear(); outcomes.clear(); timings.clear()
-                        val original = pipeline.preview(input)
+                        val width = panel.width
                         val result = pipeline.gallery(input, options, ReaderProviders(provider, "tall-ocr-fixture", null), incognito = true)
                         val keys = seen.map(::letters)
-                        val exact = keys.count { it in lines }
-                        val tiny = keys.count { it == letters("I WAS WRONG.") }
+                        val counts = keys.groupingBy { it }.eachCount()
+                        val copies = positions.size
+                        val exact = lines.sumOf { minOf(copies, counts[it] ?: 0) }
+                        val tiny = counts[letters("I WAS WRONG.")] ?: 0
                         val drawn = outcomes.count { it.second == PaintDecision.DRAWN }
                         val skips = outcomes.map { it.second }.filter { it != PaintDecision.DRAWN }.groupingBy { it }.eachCount()
-                        Log.i("SipanComicSmoke", "strip ${width}x$height -> ${original.width}x${original.height}: " +
+                        val bitmap = result.bitmap
+                        Log.i("SipanComicSmoke", "strip ${width}x$height -> ${bitmap?.width}x${bitmap?.height}: " +
                             "whole bubbles before MT $exact/${lines.size * copies}, 9px line $tiny/$copies, painted $drawn/${outcomes.size}, " +
-                            "skips=$skips; ${timings}")
+                            "skips=$skips; $timings")
                         try {
-                            assertEquals("The decoded aspect ratio is stable", width.toDouble() / height, original.width.toDouble() / original.height, .001)
-                            result.bitmap?.let { assertEquals(original.width, it.width); assertEquals(original.height, it.height) }
-                            assertTrue("No additional paint attempts without a recognized unit", outcomes.size <= seen.size)
-                            return exact to drawn
-                        } finally { original.recycle(); result.bitmap?.recycle() }
+                            val plan = planLongImage(RasterSize(width, height))
+                            assertEquals("Whole dialogue identities (no duplicates or seam fragments): $seen",
+                                lines.associateWith { copies }, counts)
+                            assertEquals("Unpainted: ${outcomes.filter { it.second != PaintDecision.DRAWN }}", lines.size * copies, drawn)
+                            assertTrue("No prices or links sent to MT", seen.none { "$7.25" in it || "example.com" in it })
+                            assertNotNull(bitmap)
+                            val after = requireNotNull(bitmap)
+                            assertEquals((plan?.output ?: RasterSize(width, height)), RasterSize(after.width, after.height))
+                            assertEquals("The decoded aspect ratio is stable", width.toDouble() / height, after.width.toDouble() / after.height, .001)
+                            if (plan != null) assertTrue("Source-resolution strips were actually used", timings.containsKey("strip OCR"))
+                            checkPlacement(panel, after, height, positions)
+                        } finally { bitmap?.recycle() }
                     }
-                    val (reading, painted) = inspect(short, panel.width, panel.height, 1)
-                    assertEquals("Standalone reference fixture", lines.size, reading)
-                    assertEquals(lines.size, painted)
+                    inspect(short, panel.height, intArrayOf(0))
                     // Exactly the same panels and placements; only extra blank rows change the second strip.
-                    for (h in listOf(9920, 12288)) inspect(strip(panel, h), panel.width, h, tops.size)
+                    for (h in listOf(9920, 12288)) inspect(strip(panel, h), h, tops)
                 }
             } finally { panel.recycle() }
         }
+    }
+
+    private fun checkPlacement(panel: Bitmap, output: Bitmap, sourceHeight: Int, positions: IntArray) {
+        val baseline = Bitmap.createBitmap(output.width, output.height, Bitmap.Config.ARGB_8888)
+        try {
+            val sx = output.width.toFloat() / panel.width
+            val sy = output.height.toFloat() / sourceHeight
+            val canvas = Canvas(baseline).apply { scale(sx, sy) }
+            for (y in positions) canvas.drawBitmap(panel, null, Rect(0, y, panel.width, y + panel.height), Paint(Paint.FILTER_BITMAP_FLAG))
+            fun changes(box: Box, dy: Int): Int {
+                var count = 0
+                for (y in ((box.top + dy) * sy).roundToInt() until ((box.bottom + dy) * sy).roundToInt()) {
+                    for (x in (box.left * sx).roundToInt() until (box.right * sx).roundToInt()) {
+                        if (baseline.getPixel(x, y) != output.getPixel(x, y)) count++
+                    }
+                }
+                return count
+            }
+            for (top in positions) {
+                assertTrue("Tiny bubble repainted at source row ${top + 700}", changes(Box(405, 662, 565, 730), top) > 12)
+                for (literal in listOf(Box(560, 1810, 797, 1963), Box(890, 1870, 1221, 1961), Box(8, 215, 300, 268))) {
+                    assertEquals("Price, URL or artwork moved at $top $literal", 0, changes(literal, top))
+                }
+            }
+        } finally { baseline.recycle() }
     }
 
     private fun strip(panel: Bitmap, height: Int): ByteArray {

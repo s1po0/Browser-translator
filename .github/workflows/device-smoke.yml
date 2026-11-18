@@ -29,7 +29,7 @@ jobs:
           - name: english-16k
             target: google_apis_ps16k
             page_size: 16384
-            test_args: -Pandroid.testInstrumentationRunnerArguments.class=dev.rojink.browser.translation.EnglishComicSmokeTest
+            test_args: -Pandroid.testInstrumentationRunnerArguments.class=dev.rojink.browser.translation.EnglishComicSmokeTest,dev.rojink.browser.translation.TallComicSmokeTest
     name: Reader (${{ matrix.name }})
     steps:
       - uses: actions/checkout@v6
