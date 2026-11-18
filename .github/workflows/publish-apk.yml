@@ -116,8 +116,14 @@ jobs:
             printf '[Signed build](%s/%s/actions/runs/%s) · [Android tests](%s)\n' "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$SOURCE_RUN" "$TESTS_URL"
           } > "$notes"
           if ! gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release create "$tag" "$apk" --repo "$GITHUB_REPOSITORY" --target "$SOURCE_COMMIT" \
-              --title "Sipan $version" --notes-file "$notes"
+            if ! release_output=$(gh release create "$tag" "$apk" --repo "$GITHUB_REPOSITORY" --target "$SOURCE_COMMIT" \
+                --title "Sipan $version" --notes-file "$notes" 2>&1); then
+              diagnostic=${release_output:0:1200}
+              diagnostic=${diagnostic//%/%25}; diagnostic=${diagnostic//$'\r'/%0D}; diagnostic=${diagnostic//$'\n'/%0A}
+              printf '::error title=GitHub release creation failed::%s\n' "$diagnostic" >&2
+              exit 1
+            fi
+            printf '%s\n' "$release_output"
           fi
           stage='Verify the anonymous release download and checksum'
           url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/download/$tag/sipan-signed-release.apk"
