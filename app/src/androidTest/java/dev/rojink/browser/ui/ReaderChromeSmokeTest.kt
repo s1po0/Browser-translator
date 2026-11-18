@@ -2,12 +2,15 @@ package dev.rojink.browser.ui
 
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.os.ParcelFileDescriptor
+import android.view.WindowManager
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import dev.rojink.browser.MainActivity
 import dev.rojink.browser.RojInkApp
 import dev.rojink.browser.search.AddressSearchMode
@@ -200,6 +203,28 @@ class ReaderChromeSmokeTest {
         } finally { runBlocking { store.update { prefs } } }
     }
 
+    private fun awaitClipboardFocus() {
+        fun focused() = compose.runOnIdle { compose.activity.hasWindowFocus() }
+        if (focused()) return
+        // OCR and WebView tests can precede this Activity on a headless emulator. Restore its display
+        // instead of asserting that Compose being idle implies Android has granted a focused window.
+        val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
+        fun shell(command: String) = ParcelFileDescriptor.AutoCloseInputStream(automation.executeShellCommand(command))
+            .bufferedReader().use { it.readText() }
+        compose.runOnIdle { compose.activity.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
+        shell("input keyevent KEYCODE_WAKEUP")
+        shell("wm dismiss-keyguard")
+        shell("cmd statusbar collapse")
+        try {
+            compose.waitUntil(12_000) { focused() }
+        } catch (failure: ComposeTimeoutException) {
+            val windows = shell("dumpsys window displays").lineSequence()
+                .filter { "mCurrentFocus=" in it || "mFocusedApp=" in it || "mAwake=" in it || "mScreenOn" in it }
+                .joinToString("; ") { it.trim() }.take(490)
+            throw AssertionError("Clipboard test needs the app's focused window: $windows", failure)
+        }
+    }
+
     @Test fun soraniMirrorsChromeAndPasteOpensConsentSheet() {
         val store = (compose.activity.application as RojInkApp).settings
         val prefs = runBlocking { store.values.first() }
@@ -215,7 +240,7 @@ class ReaderChromeSmokeTest {
             // Android restricts clipboard reads to the focused app. Set the clip and tap Paste
             // together on the UI thread, before a focus/clipboard-overlay transition can intervene.
             val demo = "https://rojink.invalid/demo/"
-            compose.waitUntil(8_000) { compose.runOnIdle { compose.activity.hasWindowFocus() } }
+            awaitClipboardFocus()
             compose.onNodeWithTag("reader-paste").assertIsDisplayed().performSemanticsAction(SemanticsActions.OnClick) { click ->
                 val activity = compose.activity
                 activity.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("demo", demo))

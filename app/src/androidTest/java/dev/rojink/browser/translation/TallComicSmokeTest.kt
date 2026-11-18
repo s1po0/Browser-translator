@@ -123,7 +123,7 @@ class TallComicSmokeTest {
                             assertEquals((plan?.output ?: RasterSize(width, height)), RasterSize(after.width, after.height))
                             assertEquals("The decoded aspect ratio is stable", width.toDouble() / height, after.width.toDouble() / after.height, .001)
                             if (plan != null) assertTrue("Source-resolution strips were actually used", timings.containsKey("strip OCR"))
-                            checkPlacement(panel, after, height, positions)
+                            checkPlacement(input, plan, panel, after, height, positions)
                         } finally { bitmap?.recycle() }
                     }
                     inspect(short, panel.height, intArrayOf(0))
@@ -134,13 +134,23 @@ class TallComicSmokeTest {
         }
     }
 
-    private fun checkPlacement(panel: Bitmap, output: Bitmap, sourceHeight: Int, positions: IntArray) {
-        val baseline = Bitmap.createBitmap(output.width, output.height, Bitmap.Config.ARGB_8888)
+    private suspend fun checkPlacement(
+        input: ByteArray, plan: LongImagePlan?, panel: Bitmap, output: Bitmap, sourceHeight: Int, positions: IntArray,
+    ) {
+        val baseline = if (plan == null) panel else Bitmap.createBitmap(output.width, output.height, Bitmap.Config.ARGB_8888)
         try {
             val sx = output.width.toFloat() / panel.width
             val sy = output.height.toFloat() / sourceHeight
-            val canvas = Canvas(baseline).apply { scale(sx, sy) }
-            for (y in positions) canvas.drawBitmap(panel, null, Rect(0, y, panel.width, y + panel.height), Paint(Paint.FILTER_BITMAP_FLAG))
+            if (plan != null) {
+                // With a different tile origin Skia's fractional sampling can differ by a rounding step.
+                // Use an unpainted composition for exact checks; separately verify its content/row alignment below.
+                requireNotNull(LongImageOcr.open(input, plan)).use { source ->
+                    val noText = object : OcrProvider {
+                        override suspend fun recognize(image: Bitmap, hint: OcrHint) = OcrPage(emptyList(), false)
+                    }
+                    assertNotNull("Unpainted source composition", source.scan(baseline, noText, OcrHint("latin", "", false)))
+                }
+            }
             fun changes(box: Box, dy: Int): Int {
                 var count = 0
                 for (y in ((box.top + dy) * sy).roundToInt() until ((box.bottom + dy) * sy).roundToInt()) {
@@ -151,12 +161,15 @@ class TallComicSmokeTest {
                 return count
             }
             for (top in positions) {
+                val x = (100 * sx).roundToInt()
+                val row = ((top + 225) * sy).roundToInt()
+                assertEquals("Unchanged artwork is aligned at source row ${top + 225}", panel.getPixel(100, 225), output.getPixel(x, row))
                 assertTrue("Tiny bubble repainted at source row ${top + 700}", changes(Box(405, 662, 565, 730), top) > 12)
                 for (literal in listOf(Box(560, 1810, 797, 1963), Box(890, 1870, 1221, 1961), Box(8, 215, 300, 268))) {
                     assertEquals("Price, URL or artwork moved at $top $literal", 0, changes(literal, top))
                 }
             }
-        } finally { baseline.recycle() }
+        } finally { if (baseline !== panel) baseline.recycle() }
     }
 
     private fun letters(text: String) = text.uppercase().filter(Char::isLetterOrDigit)
