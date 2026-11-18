@@ -46,7 +46,12 @@ jobs:
           arch: x86_64
           profile: pixel_6
           heap-size: 512M
-          script: tools/ci-gradle.sh :app:connectedDebugAndroidTest
+          # Compilation can outlast the emulator's display timeout; clipboard/gesture tests need an unlocked screen.
+          script: |
+            adb shell input keyevent KEYCODE_WAKEUP
+            adb shell svc power stayon true
+            adb shell wm dismiss-keyguard
+            tools/ci-gradle.sh :app:connectedDebugAndroidTest
       - uses: actions/upload-artifact@v6
         if: always()
         with:

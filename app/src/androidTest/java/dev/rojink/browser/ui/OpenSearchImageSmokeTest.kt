@@ -7,13 +7,13 @@ import android.view.ViewConfiguration
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.ComposeTimeoutException
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
-import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import androidx.test.platform.app.InstrumentationRegistry
 import dev.rojink.browser.MainActivity
 import dev.rojink.browser.web.BrowserTab
 import dev.rojink.browser.web.DocumentFeatures
@@ -67,7 +67,9 @@ class OpenSearchImageSmokeTest {
             browser.selected
         }
         val view = compose.runOnIdle { checkNotNull(tab.view) }
-        compose.waitUntil(12_000) { compose.runOnIdle { tab.title == "Image ready" && tab.progress == 100 && view.hasWindowFocus() } }
+        compose.waitUntil(12_000) {
+            compose.runOnIdle { tab.title == "Image ready" && tab.progress == 100 && view.isAttachedToWindow && view.height > 0 }
+        }
 
         holdImage(view)
         try {
@@ -78,7 +80,9 @@ class OpenSearchImageSmokeTest {
         }
         val save = compose.onNodeWithTag("reader-save-image")
         if (privateTab) save.assertDoesNotExist() else save.assertIsDisplayed()
-        compose.onNodeWithTag("reader-open-image").assertIsDisplayed().performClick()
+        compose.onNodeWithTag("reader-open-image").assertIsDisplayed().performSemanticsAction(SemanticsActions.OnClick) { open ->
+            assertTrue(open())
+        }
         compose.waitUntil(12_000) { imageOpened.get() && compose.runOnIdle { tab.address == image && tab.canBack && tab.progress == 100 } }
         val rendered = CompletableDeferred<Boolean>()
         compose.runOnIdle {
@@ -98,17 +102,11 @@ class OpenSearchImageSmokeTest {
     }
 
     private fun holdImage(view: WebView) {
-        val (x, y) = compose.runOnIdle {
-            val location = IntArray(2)
-            view.getLocationOnScreen(location)
-            (location[0] + view.width / 2f) to (location[1] + view.height / 2f)
-        }
-        val instrumentation = InstrumentationRegistry.getInstrumentation()
         val down = SystemClock.uptimeMillis()
-        fun send(action: Int) {
-            val event = MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, x, y, 0)
+        fun send(action: Int) = compose.runOnIdle {
+            val event = MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, view.width / 2f, view.height / 2f, 0)
             event.source = InputDevice.SOURCE_TOUCHSCREEN
-            try { instrumentation.sendPointerSync(event) } finally { event.recycle() }
+            try { view.dispatchTouchEvent(event) } finally { event.recycle() }
         }
         // The platform WebView uses its own real-time gesture detector, not Compose's test clock.
         send(MotionEvent.ACTION_DOWN)
