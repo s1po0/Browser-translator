@@ -108,6 +108,13 @@ jobs:
             printf '::notice title=Install-over check::%s\n' "$upgrade"
             printf '%s\n' "$upgrade" >> "$GITHUB_STEP_SUMMARY"
           fi
+          stage='Verify an existing version tag points at the tested commit'
+          tag_ref=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" 2>/dev/null || true)
+          tag_options=(--target "$SOURCE_COMMIT")
+          if [[ -n "$tag_ref" ]]; then
+            jq -e --arg sha "$SOURCE_COMMIT" '.object.type == "commit" and .object.sha == $sha' <<< "$tag_ref" >/dev/null
+            tag_options=(--verify-tag)
+          fi
           stage='Create the GitHub release'
           notes="$RUNNER_TEMP/sipan-release-notes.md"
           {
@@ -116,7 +123,7 @@ jobs:
             printf '[Signed build](%s/%s/actions/runs/%s) · [Android tests](%s)\n' "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$SOURCE_RUN" "$TESTS_URL"
           } > "$notes"
           if ! gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            if ! release_output=$(gh release create "$tag" "$apk" --repo "$GITHUB_REPOSITORY" --target "$SOURCE_COMMIT" \
+            if ! release_output=$(gh release create "$tag" "$apk" --repo "$GITHUB_REPOSITORY" "${tag_options[@]}" \
                 --title "Sipan $version" --notes-file "$notes" 2>&1); then
               diagnostic=${release_output:0:1200}
               diagnostic=${diagnostic//%/%25}; diagnostic=${diagnostic//$'\r'/%0D}; diagnostic=${diagnostic//$'\n'/%0A}
