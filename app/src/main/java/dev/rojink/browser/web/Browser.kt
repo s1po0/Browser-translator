@@ -546,6 +546,17 @@ class Browser(
             val target = request.url.toString()
             val address = webUrl(target)
             if (address != null) {
+                if (request.isForMainFrame && tab === selected && tab.directImagePage == tab.address &&
+                    address.isHttps && address.host == "imgs.search.brave.com" && address.port == 443) {
+                    // Let Sipan own the image navigation so the results stay in its Back stack.
+                    val revision = tab.revision
+                    view.post {
+                        if (tab === selected && !tab.destroyed && tab.view === view && tab.revision == revision) {
+                            loadAddress(tab, view, address.toString())
+                        }
+                    }
+                    return true
+                }
                 if (request.isForMainFrame && address.toString().substringBefore('#') != tab.address.substringBefore('#')) {
                     if (tab === selected && request.hasGesture()) cancelPendingSearch()
                     invalidate(tab)

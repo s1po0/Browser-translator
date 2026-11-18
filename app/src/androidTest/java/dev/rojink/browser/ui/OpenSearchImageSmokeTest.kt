@@ -4,6 +4,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.ComposeTimeoutException
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -24,7 +25,6 @@ import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
-import java.util.concurrent.atomic.AtomicBoolean
 
 @RunWith(AndroidJUnit4::class)
 class OpenSearchImageSmokeTest {
@@ -52,7 +52,6 @@ class OpenSearchImageSmokeTest {
               <span id="card" aria-hidden="true"></span>
             </button>
         """.trimIndent()
-        val imageOpened = AtomicBoolean(false)
         val browser = compose.activity.browser
         if (privateTab) assumeTrue("Isolated profiles are unavailable", compose.runOnIdle { browser.supportsPrivate })
         val tab = compose.runOnIdle {
@@ -61,10 +60,7 @@ class OpenSearchImageSmokeTest {
             browser.features = object : DocumentFeatures by browser.features {
                 override fun intercept(tab: BrowserTab, request: WebResourceRequest): WebResourceResponse = when (request.url.toString()) {
                     results -> WebResourceResponse("text/html", "utf-8", html.byteInputStream())
-                    image -> {
-                        if (request.isForMainFrame) imageOpened.set(true)
-                        WebResourceResponse("image/png", null, 200, "OK", mapOf("Cache-Control" to "no-store"), pixels.inputStream())
-                    }
+                    image -> WebResourceResponse("image/png", null, 200, "OK", mapOf("Cache-Control" to "no-store"), pixels.inputStream())
                     else -> WebResourceResponse("text/plain", "utf-8", "".byteInputStream())
                 }
             }
@@ -113,9 +109,15 @@ class OpenSearchImageSmokeTest {
             """.trimIndent())
             throw AssertionError("The direct mode did not handle the picture click: $handled; $state")
         }
-        compose.waitUntil(12_000) { imageOpened.get() && compose.runOnIdle { tab.address == image && tab.canBack && tab.progress == 100 } }
-        assertEquals("A standalone image should decode in the WebView", "true",
-            evaluate(view, "document.images.length === 1 && document.images[0].naturalWidth > 0"))
+        // Chromium may reuse the decoded thumbnail: verify the actual document, not a second network request.
+        try {
+            compose.waitUntil(12_000) { compose.runOnIdle { tab.address == image && view.url == image && tab.progress == 100 } }
+        } catch (failure: ComposeTimeoutException) {
+            val state = compose.runOnIdle { "address=${tab.address} web=${view.url} progress=${tab.progress} failed=${tab.failed}" }
+            throw AssertionError("The standalone image did not load: $state", failure)
+        }
+        assertEquals("A standalone image should decode in the WebView", "true", evaluate(view,
+            "document.contentType === 'image/png' && document.images.length === 1 && document.images[0].naturalWidth > 0"))
 
         compose.runOnIdle {
             assertSame(tab, browser.selected)
