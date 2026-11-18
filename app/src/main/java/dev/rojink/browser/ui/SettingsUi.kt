@@ -22,6 +22,7 @@ import dev.rojink.browser.RojInkApp
 import dev.rojink.browser.data.ApiKey
 import dev.rojink.browser.data.Bookmark
 import dev.rojink.browser.data.BrowserSettings
+import dev.rojink.browser.search.AddressSearchMode
 import dev.rojink.browser.web.Browser
 import kotlin.math.roundToInt
 
@@ -58,6 +59,12 @@ import kotlin.math.roundToInt
             }
         }
         item { Section(R.string.browsing) }
+        item {
+            SettingSwitch(R.string.search_setting_web, settings.addressSearch == AddressSearchMode.WEB,
+                supporting = tr(R.string.search_setting_web_detail)) { enabled ->
+                update { it.copy(addressSearch = if (enabled) AddressSearchMode.WEB else AddressSearchMode.DEVICE) }
+            }
+        }
         item { SettingRow(R.string.clear_search_index, tr(R.string.clear_search_index_body)) {
             confirm = R.string.clear_search_index to { browser.safely { browser.dao.clearSearchPages(); browser.notice = R.string.search_index_cleared } }
         } }

@@ -20,6 +20,7 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import dev.rojink.browser.search.AddressSearchMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -87,6 +88,7 @@ data class BrowserSettings(
     val useVision: Boolean = false,
     val ocrHint: String = "auto",
     val enhancedOcr: Boolean = true,
+    val addressSearch: AddressSearchMode = AddressSearchMode.ASK,
 )
 
 private val Context.preferences by preferencesDataStore("rojink-settings")
@@ -95,6 +97,7 @@ private object Prefs {
     val theme = stringPreferencesKey("theme")
     val ui = stringPreferencesKey("ui")
     val oldEngine = stringPreferencesKey("engine")
+    val addressSearch = stringPreferencesKey("address_search_mode")
     val size = intPreferencesKey("text_size")
     val text = booleanPreferencesKey("page_text")
     val images = booleanPreferencesKey("images")
@@ -111,6 +114,7 @@ class SettingsStore(context: Context) {
         textSize = (p[Prefs.size] ?: 100).coerceIn(75, 175), translateText = p[Prefs.text] ?: true,
         translateImages = p[Prefs.images] ?: true, trackerBlocking = p[Prefs.block] ?: true,
         useVision = p[Prefs.vision] ?: false, ocrHint = p[Prefs.hint] ?: "auto", enhancedOcr = p[Prefs.enhanced] ?: true,
+        addressSearch = p[Prefs.addressSearch].let { saved -> AddressSearchMode.entries.firstOrNull { it.name == saved } } ?: AddressSearchMode.ASK,
     )
     val values = store.data.map(::decode)
     suspend fun update(transform: (BrowserSettings) -> BrowserSettings) = store.edit { p ->
@@ -119,6 +123,7 @@ class SettingsStore(context: Context) {
         p[Prefs.theme] = settings.theme
         p[Prefs.ui] = settings.uiLanguage
         p.remove(Prefs.oldEngine)
+        p[Prefs.addressSearch] = settings.addressSearch.name
         p[Prefs.size] = settings.textSize.coerceIn(75, 175)
         p[Prefs.text] = settings.translateText
         p[Prefs.images] = settings.translateImages

@@ -56,6 +56,10 @@ import androidx.compose.ui.viewinterop.AndroidView
 import dev.rojink.browser.R
 import dev.rojink.browser.RojInkApp
 import dev.rojink.browser.data.BrowserSettings
+import dev.rojink.browser.search.AddressSearchMode
+import dev.rojink.browser.search.braveResultsQuery
+import dev.rojink.browser.search.braveSearchUrl
+import dev.rojink.browser.search.forTab
 import dev.rojink.browser.web.AddressInput
 import dev.rojink.browser.web.addressInput
 import dev.rojink.browser.web.Browser
@@ -93,7 +97,42 @@ private enum class Screen(val title: Int) {
     }
     val tab = browser.selected
     var searchQuery by remember(tab.id) { mutableStateOf("") }
+    var searchChoice by remember(tab.id) { mutableStateOf<String?>(null) }
+    val searchMode = settings.addressSearch.forTab(tab.incognito)
+    val webQuery = remember(tab.address) { braveResultsQuery(tab.address) }
+    val focusManager = LocalFocusManager.current
+    val keyboard = LocalSoftwareKeyboardController.current
     val video = browser.fullScreen
+    fun hideKeyboard() { focusManager.clearFocus(); keyboard?.hide() }
+    fun navigate(input: String) {
+        if (browser.navigate(input)) { hideKeyboard(); screen = Screen.Browser }
+    }
+    fun searchDevice(input: String) {
+        searchQuery = input
+        hideKeyboard()
+        screen = Screen.Search
+    }
+    fun searchWeb(input: String) {
+        val url = braveSearchUrl(input) ?: return
+        navigate(url)
+    }
+    fun open(target: Screen) {
+        if (target == Screen.Search) searchDevice(webQuery ?: searchQuery) else screen = target
+    }
+    fun submit(input: String) {
+        when (val target = addressInput(input)) {
+            is AddressInput.Link -> navigate(target.url)
+            is AddressInput.Query -> when (searchMode) {
+                AddressSearchMode.ASK -> {
+                    searchDevice(target.text)
+                    searchChoice = target.text
+                }
+                AddressSearchMode.DEVICE -> searchDevice(target.text)
+                AddressSearchMode.WEB -> searchWeb(target.text)
+            }
+            null -> browser.notice = R.string.address_error
+        }
+    }
     fun finishScreen() {
         screen = if (screen == Screen.About || screen == Screen.Privacy) Screen.Settings else Screen.Browser
     }
@@ -117,30 +156,19 @@ private enum class Screen(val title: Int) {
             confirmButton = { TextButton(onClick = { browser.dismissImageMenu(); browser.saveImage(url) }) { Text(tr(R.string.save)) } },
             dismissButton = { TextButton(onClick = browser::dismissImageMenu) { Text(tr(R.string.cancel)) } })
     }
+    searchChoice?.let { query ->
+        SearchModeDialog(onDismiss = { searchChoice = null }) { mode ->
+            searchChoice = null
+            browser.safely { app.settings.update { it.copy(addressSearch = mode) } }
+            if (mode == AddressSearchMode.WEB) searchWeb(query)
+        }
+    }
     Scaffold(containerColor = MaterialTheme.colorScheme.background, snackbarHost = { SnackbarHost(snackbar) }) { inset ->
         if (screen == Screen.Browser) {
             val focus = remember { FocusRequester() }
-            val keyboard = LocalSoftwareKeyboardController.current
-            val focusManager = LocalFocusManager.current
             val clipboard = LocalContext.current.getSystemService(ClipboardManager::class.java)
             val home = tab.address.isEmpty()
             val imeOpen = WindowInsets.ime.getBottom(LocalDensity.current) > 0
-            fun navigate(input: String) {
-                if (browser.navigate(input)) { focusManager.clearFocus(); keyboard?.hide() }
-            }
-            fun search(input: String) {
-                searchQuery = input
-                focusManager.clearFocus()
-                keyboard?.hide()
-                screen = Screen.Search
-            }
-            fun submit(input: String) {
-                when (val target = addressInput(input)) {
-                    is AddressInput.Link -> navigate(target.url)
-                    is AddressInput.Query -> search(target.text)
-                    null -> browser.notice = R.string.address_error
-                }
-            }
             fun pasteLink() {
                 // Never read the clipboard in the background or submit it as a search term.
                 val clip = runCatching { clipboard?.primaryClip }.getOrNull()
@@ -163,30 +191,32 @@ private enum class Screen(val title: Int) {
                                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 5.dp)) {
                                 Text(if (sorani) "English" else "کوردی", style = MaterialTheme.typography.labelLarge, maxLines = 1)
                             }
-                            BrowserMenu(browser, { screen = it }, onPhoto)
+                            BrowserMenu(browser, ::open, onPhoto)
                         }
                         Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = if (home) 16.dp else 4.dp, top = 3.dp, bottom = 8.dp),
                             verticalAlignment = Alignment.CenterVertically) {
-                            AddressField(tab, focus, Modifier.weight(1f), onReload = {
+                            AddressField(tab, focus, searchMode, Modifier.weight(1f), onReload = {
                                 if (tab.progress < 100) browser.stopLoading() else if (tab.view == null) navigate(tab.address) else browser.reload()
                             }, submit = ::submit)
-                            if (!home) BrowserMenu(browser, { screen = it }, onPhoto)
+                            if (!home) BrowserMenu(browser, ::open, onPhoto)
                         }
                     }
                 }
+                if (webQuery != null) WebSearchBar { searchDevice(webQuery) }
                 if (tab.progress < 100) LinearProgressIndicator(progress = { tab.progress / 100f }, modifier = Modifier.fillMaxWidth())
                 if (tab.find) FindBar(browser, tab)
                 translationBar()
                 Box(Modifier.fillMaxWidth().weight(1f)) {
                     val view = tab.view
                     when {
-                        tab.failed -> EmptyState(R.string.page_error, null, Modifier.align(Alignment.Center), button = R.string.try_again) {
+                        tab.failed -> EmptyState(if (webQuery == null) R.string.page_error else R.string.search_web_failed,
+                            if (webQuery == null) null else R.string.search_web_failed_detail, Modifier.align(Alignment.Center), button = R.string.try_again) {
                             if (view == null) browser.navigate(tab.address) else browser.reload()
                         }
                         view != null && tab.address.isNotEmpty() -> key(tab.id, view) { NativeView(view, Modifier.fillMaxSize()) }
                         else -> ReaderHome(tab, bookmarks, settings.target, onPaste = ::pasteLink, onPhoto = onPhoto,
                             onDemo = { navigate("https://rojink.invalid/demo/") }, onSaved = { screen = Screen.Bookmarks }, onBookmark = ::navigate,
-                            onSearch = ::search)
+                            onSearch = ::searchDevice)
                     }
                 }
                 if (!imeOpen) {
@@ -200,7 +230,7 @@ private enum class Screen(val title: Int) {
                 when (screen) {
                     Screen.Search -> key(tab.id) {
                         SipanSearchScreen(browser.dao, searchQuery, tab.incognito, onSearch = { searchQuery = it },
-                            onOpen = { if (browser.navigate(it)) screen = Screen.Browser })
+                            onOpen = ::navigate, onWeb = ::searchWeb)
                     }
                     Screen.Tabs -> TabGrid(browser, { browser.select(it); screen = Screen.Browser }) { privateTab -> if (browser.newTab(privateTab)) screen = Screen.Browser }
                     Screen.Bookmarks -> SavedPages(bookmarks.map { SavedPage(it.url, it.title) }, R.string.no_bookmarks, onOpen = { if (browser.navigate(it)) screen = Screen.Browser },
@@ -230,7 +260,7 @@ private enum class Screen(val title: Int) {
             @Composable fun item(id: Int, enabled: Boolean = true, action: () -> Unit) {
                 DropdownMenuItem(text = { Text(tr(id)) }, enabled = enabled, onClick = { menu = false; action() })
             }
-            item(R.string.sipan_search) { open(Screen.Search) }
+            item(R.string.search_on_device_title) { open(Screen.Search) }
             item(R.string.new_tab) { browser.newTab() }
             item(R.string.private_tab) { browser.newTab(true) }
             if (tab.address.isNotEmpty()) {
@@ -255,17 +285,24 @@ private enum class Screen(val title: Int) {
     }
 }
 
-@Composable private fun AddressField(tab: BrowserTab, focus: FocusRequester, modifier: Modifier, onReload: () -> Unit, submit: (String) -> Unit) {
+@Composable private fun AddressField(tab: BrowserTab, focus: FocusRequester, searchMode: AddressSearchMode,
+    modifier: Modifier, onReload: () -> Unit, submit: (String) -> Unit,
+) {
     var focused by remember(tab.id) { mutableStateOf(false) }
     var query by remember(tab.id) { mutableStateOf(tab.address) }
     LaunchedEffect(tab.address, focused) { if (!focused) query = tab.address }
+    val hint = when (searchMode) {
+        AddressSearchMode.WEB -> R.string.address_web
+        AddressSearchMode.DEVICE -> R.string.address_device
+        AddressSearchMode.ASK -> R.string.address
+    }
     OutlinedTextField(value = query, onValueChange = { query = it },
         modifier = modifier.testTag("reader-address").focusRequester(focus).onFocusChanged { focused = it.isFocused },
         singleLine = true, shape = RoundedCornerShape(16.dp),
         colors = OutlinedTextFieldDefaults.colors(unfocusedContainerColor = MaterialTheme.colorScheme.surface, focusedContainerColor = MaterialTheme.colorScheme.surface,
             unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant),
         textStyle = MaterialTheme.typography.bodyMedium.copy(textDirection = TextDirection.ContentOrLtr),
-        placeholder = { Text(tr(R.string.address), maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        placeholder = { Text(tr(hint), maxLines = 1, overflow = TextOverflow.Ellipsis) },
         leadingIcon = {
             if (tab.incognito) ReaderGlyph(R.drawable.ic_reader_privacy, Modifier.size(21.dp), tr(R.string.private_tab), MaterialTheme.colorScheme.primary)
             else Icon(Icons.Default.Search, null, tint = MaterialTheme.colorScheme.primary)
@@ -274,7 +311,8 @@ private enum class Screen(val title: Int) {
             focused && query.isNotBlank() -> ({
                 Row {
                     if (query != tab.address) IconButton(onClick = { submit(query) }) {
-                        if (addressInput(query) is AddressInput.Query) Icon(Icons.Default.Search, tr(R.string.sipan_search))
+                        if (addressInput(query) is AddressInput.Query) Icon(Icons.Default.Search,
+                            tr(if (searchMode == AddressSearchMode.WEB) R.string.search_web_action else R.string.sipan_search))
                         else Icon(Icons.AutoMirrored.Filled.ArrowForward, tr(R.string.go))
                     }
                     IconButton(onClick = { query = "" }) { Icon(Icons.Default.Close, tr(R.string.clear)) }

@@ -1,6 +1,6 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="address">لینک دابنێ یان لە سیپان بگەڕێ</string>
+    <string name="address">لینک دابنێ یان بگەڕێ</string>
     <string name="address_error">ناونیشانێکی دروستی وێب بنووسە.</string>
     <string name="go">بڕۆ</string>
     <string name="back">گەڕانەوە</string>
@@ -68,9 +68,9 @@
     <string name="block_trackers">بلۆککردنی بەدواداچووە باوەکان</string>
     <string name="privacy">تایبەتمەندی</string>
     <string name="privacy_intro">بێ چوونەژوورەوە، بێ سێرڤەری سیپان، بێ ڕیکلام.</string>
-    <string name="privacy_body">گەڕانی سیپان تەنها لەسەر ئامێرەکەت ئەنجام دەدرێت و وشەی گەڕان بۆ هیچ دابینکەرێک نانێرێت. ئەگەر پەڕەیەک بۆ گەڕان زیاد بکەیت، بەشێکی دەقەکە لەسەر ئامێر پاشەکەوت دەبێت. ماڵپەڕەکان کاتێک دەیکەیتەوە داواکاریی ئاسایی وەردەگرن.\n\nتەنها دوای «دەستپێکردنی وەرگێڕان»، دەق بۆ گووگڵ دەنێردرێت. بە OCR ـی ناوخۆ، پیکسڵی وێنە لەسەر ئامێر دەمێنێتەوە. ئەگەر Cloud Vision چالاک بکەیت، وێنەش بۆ گووگڵ دەنێردرێت.\n\nتابی تایبەت کوکیی جیاواز بەکاردەهێنێت و هیچ مێژوو یان ئیندێکسی کەسی پاشەکەوت ناکات. ماڵپەڕ و تۆڕەکەت هێشتا دەتوانن چالاکییەکانت ببینن.</string>
+    <string name="privacy_body">نیشانەکان، مێژوو و کاشی وەرگێڕان لەسەر ئامێر پاشەکەوت دەکرێن. وشەکانی گەڕانی ناو ئامێر بۆ هیچ شوێنێک نانێردرێن. گەڕانی وێب پەڕەی گشتیی Brave Search دەکاتەوە، بۆیە Brave وشەکانی گەڕان وەردەگرێت. سیپان پەڕەکانی ئەنجامی Brave لە لیستی مێژوودا پاشەکەوت ناکات. ئەگەر پەڕەیەک بۆ ئیندێکس زیاد بکەیت، بەشێکی دەقەکە لەسەر ئامێر پاشەکەوت دەبێت.\n\nتەنها دوای «دەستپێکردنی وەرگێڕان»، دەق بۆ گووگڵ دەنێردرێت. بە OCR ـی ناوخۆ، پیکسڵی وێنە لەسەر ئامێر دەمێنێتەوە. ئەگەر Cloud Vision چالاک بکەیت، وێنەش بۆ گووگڵ دەنێردرێت.\n\nتابی تایبەت کوکیی جیاواز بەکاردەهێنێت و مێژوو یان کاشی وەرگێڕان پاشەکەوت ناکات. نوارەی ناونیشانی لە ناو ئامێر دەگەڕێت و بە هەڵبژاردنی خۆت دەتوانیت ئەنجامی وێب بکەیتەوە. تابی تایبەت داواکارییەکانت لە ماڵپەڕەکان یان تۆڕەکەت ناشارێتەوە.</string>
     <string name="about">دەربارەی سیپان</string>
-    <string name="about_body">وێبگەڕێک بۆ خوێنەرانی مانگا، مانهوا، مێنیو و وێب بە زمانی خۆیان.\n\nبزوێنەری وێب: Android System WebView\nوەرگێڕان: Google Translate\nناسینەوەی نووسین لەسەر ئامێر: Google ML Kit\nفۆنت: Noto Naskh Arabic (SIL OFL)</string>
+    <string name="about_body">وێبگەڕێک بۆ خوێنەرانی مانگا، مانهوا، مێنیو و وێب بە زمانی خۆیان.\n\nبزوێنەری وێب: Android System WebView\nگەڕانی وێب: Brave Search\nوەرگێڕان: Google Translate\nناسینەوەی نووسین لەسەر ئامێر: Google ML Kit\nفۆنت: Noto Naskh Arabic (SIL OFL)</string>
     <string name="clear_cache">سڕینەوەی کاشی وێبگەڕ و وەرگێڕان</string>
     <string name="cache_cleared">کاشەکان سڕانەوە</string>
     <string name="clear_history">سڕینەوەی مێژوو</string>
@@ -154,8 +154,8 @@
     <string name="search_topic_sorani">سۆرانی</string>
     <string name="search_topic_erbil">هەولێر</string>
     <string name="search_count">%1$d ئەنجام</string>
-    <string name="search_empty">هیچ ئەنجامێک لەم ئیندێکسە نییە</string>
-    <string name="search_empty_detail">بە وشەی کەمتر تاقی بکەرەوە. سیپان لە ئیندێکسی خۆی دەگەڕێت، نەک هەموو وێب.</string>
+    <string name="search_empty">هیچ ئەنجامێک لە ناو ئامێر نەدۆزرایەوە</string>
+    <string name="search_empty_detail">وشەیەکی تر تاقی بکەرەوە، یان بۆ ئەنجامی زیاتر لە وێب بگەڕێ.</string>
     <string name="search_source_index">ئیندێکسی سیپان</string>
     <string name="search_source_saved">پەڕەی زیادکراو</string>
     <string name="index_page">زیادکردنی پەڕە بۆ گەڕانی سیپان</string>
@@ -166,4 +166,20 @@
     <string name="search_index_cleared">پەڕە زیادکراوەکانی گەڕان سڕانەوە</string>
     <string name="enhanced_ocr">OCR ـی بەهێزتر</string>
     <string name="enhanced_ocr_detail">دەقی بچووک یان کاڵ دووبارە دەخوێنێتەوە. وێنەی دژوار کاتی زیاتر دەخایەنێت.</string>
+    <string name="address_device">لینک دابنێ یان لە ناو ئامێر بگەڕێ</string>
+    <string name="address_web">لینک دابنێ یان بە Brave بگەڕێ</string>
+    <string name="search_choose_title">لە کوێ بگەڕێیت؟</string>
+    <string name="search_choose_detail">گەڕانی وێب ئەنجامەکانی Brave Search دەکاتەوە و وشەکانی گەڕان بۆ Brave دەنێرێت. گەڕانی ناو ئامێر تەنها لە ئیندێکس و پەڕە پاشەکەوتکراوەکانت دەگەڕێت. ئەم هەڵبژاردنە بۆ تابە ئاساییەکانە و لە ڕێکخستنەکان دەتوانیت بیگۆڕیت.</string>
+    <string name="search_use_web">گەڕانی وێب بەکاربهێنە</string>
+    <string name="search_use_device">تەنها ناو ئامێر</string>
+    <string name="search_on_device">لەسەر ئامێر</string>
+    <string name="search_on_device_title">گەڕانی ناو ئامێر</string>
+    <string name="search_web_action">لە وێب بگەڕێ بە Brave</string>
+    <string name="search_web_action_detail">ئەنجامی زیاتر لە وێب. کاتێک ئەمە هەڵدەبژێریت، وشەی گەڕان بۆ Brave دەنێردرێت.</string>
+    <string name="search_web_private_detail">تەنانەت لە تابی تایبەتیش، ئەگەر گەڕانی وێب هەڵبژێریت، Brave وشەی گەڕان وەردەگرێت.</string>
+    <string name="search_web_provider">ئەنجامی وێب · Brave Search</string>
+    <string name="search_web_failed">ئەنجامەکانی وێب بار نەبوون</string>
+    <string name="search_web_failed_detail">پەیوەندیی ئینتەرنێت بپشکنە و دووبارە هەوڵ بدە، یان «لەسەر ئامێر» هەڵبژێرە.</string>
+    <string name="search_setting_web">گەڕانی وێب لە نوارەی ناونیشان</string>
+    <string name="search_setting_web_detail">تابە ئاساییەکان وشەی گەڕان بۆ Brave Search دەنێرن. بۆ گەڕان تەنها لەسەر ئامێر، ئەمە ناچالاک بکە.</string>
 </resources>

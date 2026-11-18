@@ -35,6 +35,7 @@ import dev.rojink.browser.data.BrowserDao
 import dev.rojink.browser.data.BrowserSettings
 import dev.rojink.browser.data.Visit
 import dev.rojink.browser.data.SearchPage
+import dev.rojink.browser.search.braveResultsQuery
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -477,6 +478,8 @@ class Browser(
             tab.progress = 100
             if (tab.incognito || tab.failed) return
             val current = webUrl(url)?.toString() ?: return
+            // Keep results in the tab's back stack, but not the persistent history/search library.
+            if (braveResultsQuery(current) != null) return
             val title = tab.title
             scope.launch {
                 try { dao.putVisit(Visit(current, title.ifBlank { current })); dao.trimVisits() }

@@ -1,5 +1,6 @@
 package dev.rojink.browser.web
 
+import dev.rojink.browser.search.searchQuery
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import java.net.IDN
@@ -29,13 +30,13 @@ internal sealed interface AddressInput {
     data class Query(val text: String) : AddressInput
 }
 
-/** Queries never become web URLs. Only the search screen handles Query. */
+/** Classify input without choosing a search destination or doing any network work. */
 internal fun addressInput(input: String): AddressInput? {
     val text = input.trim()
     if (text.isBlank()) return null
     resolveLink(text)?.let { return AddressInput.Link(it) }
     if (scheme.containsMatchIn(text) || text.startsWith("javascript:", true) || text.startsWith("data:", true) || text.startsWith("file:", true)) return null
-    return AddressInput.Query(text.take(300))
+    return searchQuery(text).takeIf(String::isNotBlank)?.let { AddressInput.Query(it) }
 }
 
 fun webUrl(value: String?): HttpUrl? = value?.toHttpUrlOrNull()?.takeIf { it.username.isEmpty() && it.password.isEmpty() }
