@@ -59,6 +59,7 @@ jobs:
           target: ${{ matrix.target }}
           arch: x86_64
           profile: pixel_6
+          ram-size: 3072M
           heap-size: 512M
           # Compilation can outlast the emulator's display timeout; clipboard/gesture tests need an unlocked screen.
           script: |

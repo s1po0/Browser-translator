@@ -2,9 +2,6 @@ package dev.rojink.browser.translation
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.graphics.Canvas
-import android.graphics.Paint
-import android.graphics.Rect
 import android.util.Log
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -16,6 +13,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.ByteArrayOutputStream
+import java.io.DataOutputStream
+import java.util.zip.CRC32
+import java.util.zip.DeflaterOutputStream
 import kotlin.math.roundToInt
 
 @RunWith(AndroidJUnit4::class)
@@ -175,16 +175,51 @@ class TallComicSmokeTest {
     private fun letters(text: String) = text.uppercase().filter(Char::isLetterOrDigit)
 }
 
+/** Encode fixture rows directly so the harness itself does not allocate a 70 MB chapter bitmap. */
 internal fun comicStrip(panel: Bitmap, height: Int, tops: IntArray, continuous: Boolean = false): ByteArray {
-    val bitmap = Bitmap.createBitmap(panel.width, height, Bitmap.Config.ARGB_8888)
-    return try {
-        bitmap.eraseColor(0xFF728091.toInt())
-        val canvas = Canvas(bitmap)
-        if (continuous) canvas.drawRect((panel.width / 2).toFloat(), 0f, panel.width.toFloat(), height.toFloat(), Paint().apply { color = 0xFF657787.toInt() })
-        for (top in tops) canvas.drawBitmap(panel, null, Rect(0, top, panel.width, top + panel.height), null)
-        ByteArrayOutputStream().use { out ->
-            assertTrue(bitmap.compress(Bitmap.CompressFormat.PNG, 100, out))
-            out.toByteArray()
+    val width = panel.width
+    val pixels = IntArray(width)
+    val row = ByteArray(1 + 3 * width) // PNG filter 0 followed by RGB triplets.
+    fun pack(into: ByteArray) {
+        for ((x, pixel) in pixels.withIndex()) {
+            into[3 * x + 1] = (pixel ushr 16).toByte()
+            into[3 * x + 2] = (pixel ushr 8).toByte()
+            into[3 * x + 3] = pixel.toByte()
         }
-    } finally { bitmap.recycle() }
+    }
+    val blank = ByteArray(row.size)
+    for (x in pixels.indices) pixels[x] = if (continuous && x >= width / 2) 0x657787 else 0x728091
+    pack(blank)
+    val zipped = ByteArrayOutputStream()
+    DeflaterOutputStream(zipped).use { out ->
+        for (y in 0 until height) {
+            val top = tops.firstOrNull { y in it until it + panel.height }
+            if (top == null) out.write(blank) else {
+                panel.getPixels(pixels, 0, width, 0, y - top, width, 1)
+                pack(row)
+                out.write(row)
+            }
+        }
+    }
+    val bytes = ByteArrayOutputStream()
+    DataOutputStream(bytes).use { out ->
+        out.write(byteArrayOf(0x89.toByte(), 80, 78, 71, 13, 10, 26, 10))
+        fun chunk(name: String, payload: ByteArray) {
+            val type = name.toByteArray(Charsets.US_ASCII)
+            val check = CRC32().apply { update(type); update(payload) }
+            out.writeInt(payload.size)
+            out.write(type)
+            out.write(payload)
+            out.writeInt(check.value.toInt())
+        }
+        val header = ByteArrayOutputStream(13)
+        DataOutputStream(header).use {
+            it.writeInt(width); it.writeInt(height)
+            it.write(byteArrayOf(8, 2, 0, 0, 0)) // eight-bit RGB, standard compression, no interlace
+        }
+        chunk("IHDR", header.toByteArray())
+        chunk("IDAT", zipped.toByteArray())
+        chunk("IEND", byteArrayOf())
+    }
+    return bytes.toByteArray()
 }
