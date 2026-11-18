@@ -6,6 +6,7 @@ on:
       - 'app/**'
       - 'gradle/**'
       - 'tools/ci-gradle.sh'
+      - 'tools/ci-reader-smoke.sh'
       - '**/*.gradle.kts'
       - '.github/workflows/device-smoke.yml'
   workflow_dispatch:
@@ -65,7 +66,7 @@ jobs:
             adb shell svc power stayon true
             adb shell wm dismiss-keyguard
             test "$(adb shell getconf PAGE_SIZE | tr -d '\r')" = '${{ matrix.page_size }}'
-            tools/ci-gradle.sh :app:connectedDebugAndroidTest ${{ matrix.test_args }}
+            tools/ci-reader-smoke.sh ${{ matrix.test_args }}
       - uses: actions/upload-artifact@v6
         if: always()
         with:

@@ -5,6 +5,7 @@ import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.util.Log
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.runBlocking
@@ -89,10 +90,12 @@ class EnglishComicSmokeTest {
             val image = BitmapFactory.decodeByteArray(data, 0, data.size)
             try {
                 PaddleComicOcr(context).use { ocr ->
-                    val fast = ocr.recognize(image)
-                    val bubbles = comicBubbles(image)
+                    ocr.recognize(image) // warm model initialization and runtime caches
+                    val fast = measured("full-panel Tiny") { ocr.recognize(image) }
+                    val bubbles = measured("balloon proposals") { comicBubbles(image) }
                     assertTrue("Faint bubble proposal: $bubbles", bubbles.any { it.bounds.x in 470..500 && it.bounds.y in 680..715 })
-                    val recovered = ocr.recognize(image, bubbles = bubbles, refine = true)
+                    assertTrue("Dark fill stays separate from the panel rule", bubbles.any { it.dark && it.bounds.y in 884..924 })
+                    val recovered = measured("Tiny with crop recovery and Small review") { ocr.recognize(image, bubbles = bubbles, refine = true) }
                     val tinyBox = Box(396, 655, 575, 737)
                     fun readings(lines: List<OcrLine>, box: Box) = lines.filter { it.box.overlaps(box) }.map { it.text }
                     assertTrue("After crop recovery: ${readings(recovered, tinyBox)}; full panel: ${readings(fast, tinyBox)}",
@@ -113,28 +116,32 @@ class EnglishComicSmokeTest {
                 override suspend fun translate(texts: List<String>, source: String, target: String): List<String> {
                     seen += texts
                     return texts.map { item -> when {
-                        item.trim() == "YOU?" -> item // Also unchanged on the single retry; use the exact local fallback.
+                        item.trim() == "YOU?" -> item // Use the exact local fallback instead of spending another request.
                         "I WAS WRONG." in item -> "من هەڵەم کرد."
                         else -> "دەگەڕێمەوە."
                     } }
                 }
             }
-            ImagePipeline(context).use { pipeline ->
+            val stages = linkedMapOf<String, Long>()
+            val decisions = mutableListOf<Pair<Box, PaintDecision>>()
+            ImagePipeline(context, { stage, milliseconds -> stages[stage] = milliseconds }, { box, decision -> decisions += box to decision }).use { pipeline ->
                 val before = pipeline.preview(data)
                 val result = pipeline.gallery(data, ReaderOptions("ckb", false, true, ENGLISH_COMIC_SCRIPT, false),
                     ReaderProviders(provider, "english-coverage-fixture", null), true)
                 val after = result.bitmap
-                assertNotNull("Rendered difficult English panel: $seen", after)
+                Log.i("SipanComicSmoke", "coverage gallery, mocked MT: $stages; drawn=${decisions.count { it.second == PaintDecision.DRAWN }}/${decisions.size}")
+                assertNotNull("Rendered difficult English panel: $seen; paint=$decisions", after)
                 try {
                     assertTrue("Inputs: $seen", seen.any { "I WAS WRONG." in it })
-                    assertTrue("Inputs: $seen", seen.count { it == "YOU?" } >= 2)
+                    assertEquals("Standalone YOU? uses the local fallback. Inputs: $seen", 1, seen.count { it == "YOU?" })
                     assertTrue("Literals are not sent as dialogue: $seen", seen.none { "$7.25" in it || "example.com" in it })
                     for (box in listOf(Box(398, 46, 592, 119), Box(405, 662, 565, 730))) {
                         var changed = 0
                         for (y in box.top until box.bottom) for (x in box.left until box.right) {
                             if (before.getPixel(x, y) != after!!.getPixel(x, y)) changed++
                         }
-                        assertTrue("Ink changed in $box ($changed pixels)", changed > 25)
+                        val nearby = decisions.filter { it.first.overlaps(box) }
+                        assertTrue("Ink changed in $box ($changed pixels); paint=$nearby; inputs=$seen", changed > 25)
                     }
                     for (box in listOf(Box(560, 1810, 797, 1963), Box(890, 1870, 1221, 1961))) {
                         for (y in box.top until box.bottom step 2) for (x in box.left until box.right step 2) {
@@ -157,6 +164,11 @@ class EnglishComicSmokeTest {
             val lines = listOf(OcrLine("YOU CAN HELP", first, emptyList(), 1), OcrLine("I WILL WAIT", next, emptyList(), 1))
             assertEquals(2, groupForImage(OcrPage(lines, false, comic = true), surface::sameInterior).units.size)
         } finally { bitmap.recycle() }
+    }
+
+    private inline fun <T> measured(name: String, block: () -> T): T {
+        val start = System.nanoTime()
+        return block().also { Log.i("SipanComicSmoke", "$name: ${(System.nanoTime() - start) / 1_000_000} ms") }
     }
 
     private val coverageBytes get() = instrumentation.context.assets.open("en-comic-coverage.png").use { it.readBytes() }

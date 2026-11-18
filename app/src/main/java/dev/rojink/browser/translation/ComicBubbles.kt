@@ -3,7 +3,6 @@ package dev.rojink.browser.translation
 import android.graphics.Bitmap
 import kotlin.math.abs
 import kotlin.math.ceil
-import kotlin.math.floor
 import kotlin.math.sqrt
 
 /** Approximate enclosed flat backgrounds. They're proposals for OCR, never permission to erase the bubble. */
@@ -41,34 +40,34 @@ internal fun comicBubbles(bitmap: Bitmap): List<ComicBubble> {
             low[index] = lo; high[index] = hi
         }
     }
-    return findComicBubbles(luma, w, h, bitmap.width, bitmap.height, low, high)
+    return findComicBubbles(luma, w, h, bitmap.width, bitmap.height, low, high, step)
 }
 
 /** Four-connected interiors with enclosed glyph-like horizontal bands, in bounded scaled coordinates. */
 internal fun findComicBubbles(
     luma: IntArray, w: Int, h: Int, imageWidth: Int, imageHeight: Int,
-    low: IntArray = luma, high: IntArray = luma,
+    low: IntArray = luma, high: IntArray = luma, step: Int = (imageWidth + w - 1) / w,
 ): List<ComicBubble> {
     require(luma.size == w * h && luma.size <= 230_000)
     val labels = IntArray(luma.size)
     val queue = IntArray(luma.size)
     val result = mutableListOf<ComicBubble>()
     var region = 0
-    fun toImage(box: Box) = Box(
-        floor(box.left.toDouble() * imageWidth / w).toInt(), floor(box.top.toDouble() * imageHeight / h).toInt(),
-        ceil(box.right.toDouble() * imageWidth / w).toInt(), ceil(box.bottom.toDouble() * imageHeight / h).toInt(),
-    )
+    fun toImage(box: Box) = Box(box.left * step, box.top * step, box.right * step, box.bottom * step).clip(imageWidth, imageHeight)
     for (seed in luma.indices) {
         val tone = luma[seed]
         if (labels[seed] != 0 || tone < 0 || tone in 80..199) continue
         val dark = tone < 80
+        // A downsampled dark outline can look like its fill when averaged. Don't seed
+        // or bridge across a cell that still contains a much darker edge pixel.
+        if (dark && low[seed] < tone - 17) continue
         region++
         labels[seed] = region
         queue[0] = seed
         var head = 0; var end = 1
         var left = w; var top = h; var right = 0; var bottom = 0
         fun visit(next: Int) {
-            if (labels[next] != 0 || luma[next] < 0 || abs(luma[next] - tone) > 21) return
+            if (labels[next] != 0 || luma[next] < 0 || abs(luma[next] - tone) > 21 || dark && low[next] < tone - 17) return
             labels[next] = region
             queue[end++] = next
         }
@@ -125,6 +124,19 @@ internal fun comicBubbleFor(box: Box, bubbles: List<ComicBubble>): ComicBubble? 
 
 /** Don't spend a second detection pass on a bubble whose ink bands are already represented. */
 internal fun missedBubbleBands(bubble: ComicBubble, lines: List<OcrLine>): List<Box> = bubble.bands.filter { band ->
-    lines.none { line -> line.confidence >= .70f && line.text.any(Char::isLetterOrDigit) &&
-        line.box.intersection(band) >= band.width * band.height * .62f }
+    val slack = (band.height / 5).coerceIn(1, 3)
+    // Ink bands are padded and may span closely spaced lines. Test vertical union of broad readings,
+    // not a sum of overlapping OCR boxes or a high-confidence stub such as just "ONG.".
+    val spans = lines.asSequence().filter { line ->
+        line.confidence >= .70f && !line.vertical &&
+            minOf(line.box.right, band.right) - maxOf(line.box.left, band.left) >= band.width * .66f &&
+            line.box.top < band.bottom && line.box.bottom > band.top && line.text.any(Char::isLetterOrDigit)
+    }.map { maxOf(band.top, it.box.top - slack) to minOf(band.bottom, it.box.bottom + slack) }.sortedBy { it.first }
+    var edge = band.top
+    var covered = 0
+    for ((top, bottom) in spans) {
+        covered += (bottom - maxOf(edge, top)).coerceAtLeast(0)
+        edge = maxOf(edge, bottom)
+    }
+    covered < band.height * .62f
 }

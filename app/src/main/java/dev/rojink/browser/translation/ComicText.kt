@@ -34,7 +34,8 @@ internal fun reliableEnglish(value: String): Boolean {
 
 internal fun needsLatinReview(tiny: PaddleText, base: OcrLine?, enclosed: Boolean, recovered: Boolean): Boolean {
     val text = tiny.value
-    val grounded = enclosed || base?.let { !it.vertical && englishLettering(it.text) } == true || englishProse(text)
+    val grounded = enclosed || base?.let { !it.vertical && englishLettering(it.text) } == true || englishProse(text) ||
+        words(text).any(joinedDialogueWords::contains)
     if (!grounded || tiny.confidence < .28f && !recovered || isProtectedImageLiteral(text)) return false
     return recovered && tiny.confidence < .92f || tiny.confidence < .88f ||
         words(text).any { it.length >= 13 || it in joinedDialogueWords } ||
@@ -92,21 +93,34 @@ internal fun reconcileComicOcr(
             if (passesSurface && result.size < 500 && result.none { areaOverlap(it.box, line.box) > .39 }) result += line
             continue
         }
+        val newLetters = alphaText(text)
+        val partials = overlap.map(result::get)
+        if (line.confidence >= .87f && englishProse(text) && lightBorder(line.box) && partials.all { old ->
+                val letters = alphaText(old.text)
+                !old.vertical && englishLettering(old.text) && imageLiteralSpans(old.text).isEmpty() && letters.length >= 2 &&
+                    newLetters.length >= letters.length + 3 && newLetters.contains(letters) && areaOverlap(old.box, line.box) > .76
+            } && result.indices.none { it !in overlap && areaOverlap(result[it].box, line.box) > .43 }) {
+            // A small/faint line can be split into several words or reported as just its darkest segment.
+            val index = overlap.first()
+            val block = result[index].block
+            overlap.asReversed().forEach { result.removeAt(it) }
+            result.add(index, line.copy(block = block))
+            continue
+        }
         if (overlap.size != 1) continue
         val index = overlap.single()
         val old = result[index]
-        if (old.vertical || !englishLettering(old.text) || imageLiteralSpans(old.text).isNotEmpty()) continue
+        if (old.vertical || imageLiteralSpans(old.text).isNotEmpty()) continue
         val oldLetters = alphaText(old.text)
-        val newLetters = alphaText(text)
+        if (shortLetter(text) && oldLetters == "l" && line.confidence >= .77f && areaOverlap(old.box, line.box) > .80 && lightBorder(line.box)) {
+            result[index] = old.copy(text = text, confidence = line.confidence)
+            continue
+        }
+        if (!englishLettering(old.text)) continue
         if (oldLetters == newLetters && (words(text).size > words(old.text).size ||
                 line.confidence >= .88f && text.count { it in ".,!?:;…" } > old.text.count { it in ".,!?:;…" }) &&
             (explicit || englishProse(text))) {
             result[index] = old.copy(text = text) // Keep ML Kit word boxes and tight geometry.
-        } else if (oldLetters.length >= 3 && newLetters.length >= oldLetters.length + 3 && newLetters.contains(oldLetters) &&
-            line.confidence >= .87f && englishProse(text) && areaOverlap(old.box, line.box) > .76 && lightBorder(line.box) &&
-            result.indices.none { it != index && areaOverlap(result[it].box, line.box) > .43 }) {
-            // ML Kit can return only the legible middle of a line; erase the extra words only with a grounded box.
-            result[index] = line.copy(block = old.block)
         } else if (old.confidence < .67f && line.confidence >= .88f && newLetters.length >= oldLetters.length && englishProse(text) &&
             areaOverlap(old.box, line.box) > .70) {
             result[index] = old.copy(text = text, confidence = line.confidence)

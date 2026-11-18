@@ -49,10 +49,11 @@ internal fun groupForImage(page: OcrPage, sameInterior: ((Box, Box) -> Boolean?)
         val matching = groups.asReversed().firstOrNull { g ->
             if (g.size >= 8 || line in labelRows && g.any { it in labelRows }) return@firstOrNull false
             val previous = g.last()
-            val firstBubble = bubbles[previous]
+            val previousBubble = bubbles[previous]
+            val groupBubble = previousBubble ?: g.firstNotNullOfOrNull { bubbles[it] }
             val nextBubble = bubbles[line]
-            if (firstBubble != null && nextBubble != null && firstBubble != nextBubble) return@firstOrNull false
-            val enclosed = firstBubble != null && firstBubble == nextBubble
+            if (groupBubble != null && nextBubble != null && groupBubble != nextBubble) return@firstOrNull false
+            val enclosed = previousBubble != null && previousBubble == nextBubble
             val usual = g.any { canGroup(it, line) }
             val neighboring = page.comic && comicNeighbors(previous, line, enclosed)
             val interior = if (!enclosed && (neighboring || usual && page.comic && !line.vertical)) sameInterior?.invoke(previous.box, line.box) else null

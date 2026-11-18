@@ -87,8 +87,11 @@ internal suspend fun translateImageWords(
             if (validImageTranslation(before, after, checkSource, target)) {
                 result[index] = polish(after)
             } else if (target == "ckb" && (knownEnglish || englishProse(before))) {
-                val key = checkSource to before
-                retry.getOrPut(key) { mutableListOf() }.add(index)
+                val local = if (knownEnglish) shortSoraniLine(before) else null
+                if (local != null) result[index] = local else {
+                    val key = checkSource to before
+                    retry.getOrPut(key) { mutableListOf() }.add(index)
+                }
             }
         }
     }
@@ -110,8 +113,7 @@ internal suspend fun translateImageWords(
         }
     }
     for ((key, indices) in retry) {
-        val value = fixes[key] ?: if (key.first == "en") shortSoraniLine(key.second) else null
-        if (value != null) indices.forEach { result[it] = value }
+        fixes[key]?.let { value -> indices.forEach { result[it] = value } }
     }
     return result
 }

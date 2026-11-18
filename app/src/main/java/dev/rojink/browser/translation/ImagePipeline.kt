@@ -106,7 +106,17 @@ private fun InetAddress.isPublicMediaAddress(): Boolean {
 
 internal data class GalleryImage(val bitmap: Bitmap?, val keptText: Boolean)
 
-internal class ImagePipeline(private val context: Context) : PageImageProcessor, AutoCloseable {
+private sealed interface ImageFrame {
+    data class Original(val keptText: Boolean = false) : ImageFrame
+    data class Cached(val image: RenderedImage.Stored) : ImageFrame
+    data class Painted(val bitmap: Bitmap, val cacheKey: String?, val keptText: Boolean) : ImageFrame
+}
+
+internal class ImagePipeline(
+    private val context: Context,
+    private val measure: ((String, Long) -> Unit)? = null,
+    private val paintDecision: ((Box, PaintDecision) -> Unit)? = null,
+) : PageImageProcessor, AutoCloseable {
     private val slots = imageSlots(context)
     private val onDevice = OnDeviceImageOcr(context)
     private val loader = MediaLoader(context)
@@ -116,7 +126,21 @@ internal class ImagePipeline(private val context: Context) : PageImageProcessor,
     override suspend fun process(info: ImageWork, options: ReaderOptions, providers: ReaderProviders, privateTab: Boolean): ImageTranslation =
         slots.withPermit {
             val input = loader.load(info) ?: return@withPermit ImageTranslation()
-            translate(input, options, providers, info.candidate.lang, save = !privateTab)
+            when (val frame = prepare(input, options, providers, info.candidate.lang, save = !privateTab)) {
+                is ImageFrame.Original -> ImageTranslation(keptText = frame.keptText)
+                is ImageFrame.Cached -> ImageTranslation(frame.image)
+                is ImageFrame.Painted -> try {
+                    val image = timed("encode") {
+                        frame.cacheKey?.let { cache.put(it, frame.bitmap) } ?: withContext(Dispatchers.Default) {
+                            RenderedImage.Memory(ByteArrayOutputStream().use { output ->
+                                if (!frame.bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)) throw IOException("Could not render image")
+                                output.toByteArray()
+                            })
+                        }
+                    }
+                    ImageTranslation(image, frame.keptText)
+                } finally { frame.bitmap.recycle() }
+            }
         }
 
     suspend fun open(uri: Uri): ByteArray = withContext(Dispatchers.IO) {
@@ -127,52 +151,63 @@ internal class ImagePipeline(private val context: Context) : PageImageProcessor,
     suspend fun preview(bytes: ByteArray): Bitmap = withContext(Dispatchers.Default) { decode(bytes) }
 
     suspend fun gallery(input: ByteArray, options: ReaderOptions, providers: ReaderProviders, incognito: Boolean): GalleryImage = slots.withPermit {
-        val result = translate(input, options, providers, "", !incognito)
-        val bitmap = result.image?.let { rendered -> withContext(Dispatchers.Default) {
-            rendered.stream().use { BitmapFactory.decodeStream(it) } ?: throw IOException("Could not decode output")
-        } }
-        GalleryImage(bitmap, result.keptText)
+        when (val frame = prepare(input, options, providers, "", !incognito)) {
+            is ImageFrame.Original -> GalleryImage(null, frame.keptText)
+            is ImageFrame.Cached -> GalleryImage(withContext(Dispatchers.Default) {
+                frame.image.stream().use { BitmapFactory.decodeStream(it) } ?: throw IOException("Could not decode output")
+            }, false)
+            // The gallery can show the painted bitmap directly; it doesn't need a PNG round trip.
+            is ImageFrame.Painted -> try {
+                frame.cacheKey?.let { timed("cache") { cache.put(it, frame.bitmap) } }
+                GalleryImage(frame.bitmap, frame.keptText)
+            } catch (failure: Throwable) { frame.bitmap.recycle(); throw failure }
+        }
     }
 
     suspend fun clear() = cache.clear()
     override fun close() { onDevice.close() }
 
-    private suspend fun translate(input: ByteArray, options: ReaderOptions, providers: ReaderProviders, language: String, save: Boolean): ImageTranslation {
+    private inline fun <T> timed(stage: String, block: () -> T): T {
+        val observer = measure ?: return block()
+        val start = System.nanoTime()
+        return block().also { observer(stage, (System.nanoTime() - start) / 1_000_000) }
+    }
+
+    private suspend fun prepare(input: ByteArray, options: ReaderOptions, providers: ReaderProviders, language: String, save: Boolean): ImageFrame {
         val hint = OcrHint(options.script, language, options.enhancedOcr)
         val vision = providers.visionKey
         val key = if (save) withContext(Dispatchers.Default) {
             val langHint = language.lowercase().take(16)
             sha256("sipan-image-v4:${sha256(input)}:${options.target}:${options.script}:${options.enhancedOcr}:$langHint:${providers.variant}:${vision != null}".toByteArray())
         } else null
-        if (key != null) cache.get(key)?.let { return ImageTranslation(it) }
-        val bitmap = withContext(Dispatchers.Default) { decode(input) }
+        if (key != null) cache.get(key)?.let { return ImageFrame.Cached(it) }
+        val bitmap = timed("decode") { withContext(Dispatchers.Default) { decode(input) } }
+        var display = false
         try {
-            if (bitmap.width < 80 || bitmap.height < 80) return ImageTranslation()
-            val recognized = (if (vision != null) CloudVisionOcrProvider(vision) else onDevice).recognize(bitmap, hint)
+            if (bitmap.width < 80 || bitmap.height < 80) return ImageFrame.Original()
+            val recognized = timed("ocr") { (if (vision != null) CloudVisionOcrProvider(vision) else onDevice).recognize(bitmap, hint) }
             val comic = recognized.comic || options.script == ENGLISH_COMIC_SCRIPT
-            val layout = withContext(Dispatchers.Default) {
+            val (layout, missed) = timed("layout") { withContext(Dispatchers.Default) {
                 val surface = if (comic) ComicSurface(bitmap, recognized.bubbles) else null
-                groupForImage(recognized.copy(comic = comic), surface?.let { it::sameInterior })
+                val layout = groupForImage(recognized.copy(comic = comic), surface?.let { it::sameInterior })
+                val missed = comic && options.enhancedOcr && recognized.bubbles.any { missedBubbleBands(it, recognized.lines).isNotEmpty() }
+                layout to missed
+            } }
+            if (layout.units.isEmpty()) return ImageFrame.Original(keptText = missed)
+            val translations = timed("translate") {
+                translateImageWords(layout.units, options.target, options.script == ENGLISH_COMIC_SCRIPT, providers.imageTranslator, providers.imageRetry)
             }
-            val missed = comic && options.enhancedOcr && recognized.bubbles.any { missedBubbleBands(it, recognized.lines).isNotEmpty() }
-            if (layout.units.isEmpty()) return ImageTranslation(keptText = missed)
-            val translations = translateImageWords(layout.units, options.target, options.script == ENGLISH_COMIC_SCRIPT,
-                providers.imageTranslator, providers.imageRetry)
-            val drawn = withContext(Dispatchers.Default) {
-                renderer.paint(bitmap, layout.units, translations.map { it.take(2000) }, layout.protected, options.target, comic, recognized.bubbles)
-            }
+            val drawn = timed("paint") { withContext(Dispatchers.Default) {
+                renderer.paint(bitmap, layout.units, translations.map { it.take(2000) }, layout.protected, options.target, comic,
+                    recognized.bubbles, paintDecision)
+            } }
             val keptText = missed || drawn < layout.units.size
-            if (drawn == 0) return ImageTranslation(keptText = keptText)
+            if (drawn == 0) return ImageFrame.Original(keptText = keptText)
             coroutineContext.ensureActive()
             // Partial renders are valid for this session, but don't pin a missed bubble or provider error to disk.
-            val rendered = if (key != null && !keptText) cache.put(key, bitmap) else withContext(Dispatchers.Default) {
-                RenderedImage.Memory(ByteArrayOutputStream().use { output ->
-                    if (!bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)) throw IOException("Could not render image")
-                    output.toByteArray()
-                })
-            }
-            return ImageTranslation(rendered, keptText)
-        } finally { bitmap.recycle() }
+            display = true
+            return ImageFrame.Painted(bitmap, key.takeUnless { keptText }, keptText)
+        } finally { if (!display) bitmap.recycle() }
     }
 
     @Suppress("DEPRECATION")

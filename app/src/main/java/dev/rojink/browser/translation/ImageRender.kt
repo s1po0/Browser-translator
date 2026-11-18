@@ -18,13 +18,15 @@ import kotlin.math.roundToInt
 private val rtlTargets = setOf("ckb", "ar", "fa", "ps", "ur", "iw", "he", "yi", "sd", "ug", "dv", "ks", "bal", "fa-AF", "pa-Arab", "ms-Arab", "bm-Nkoo")
 private val naskhTargets = setOf("ckb", "ar", "fa", "ps", "ur", "sd", "ug", "ks", "bal", "fa-AF", "pa-Arab", "ms-Arab")
 
+internal enum class PaintDecision { UNCHANGED, PROTECTED, COLLISION, NO_ROOM, DRAWN }
+
 /** Rewrite only OCR boxes, leaving numbers, surrounding illustration, and the page layout in place. */
 internal class ImageRenderer(private val context: Context) {
     private val naskh by lazy { ResourcesCompat.getFont(context, R.font.noto_naskh_arabic) ?: Typeface.DEFAULT }
 
     fun paint(
         bitmap: Bitmap, input: List<TextUnit>, translated: List<String>, protected: List<Box>, target: String,
-        comic: Boolean = false, bubbles: List<ComicBubble> = emptyList(),
+        comic: Boolean = false, bubbles: List<ComicBubble> = emptyList(), onDecision: ((Box, PaintDecision) -> Unit)? = null,
     ): Int {
         val canvas = Canvas(bitmap)
         val surface = if (comic) ComicSurface(bitmap, bubbles) else null
@@ -37,10 +39,13 @@ internal class ImageRenderer(private val context: Context) {
         val drawnAreas = mutableListOf<Box>()
         var count = 0
         units.zip(translated).forEachIndexed { index, (unit, value) ->
-            if (value.isBlank() || value.trim() == unit.text.trim()) return@forEachIndexed
+            fun report(decision: PaintDecision) { onDecision?.invoke(unit.box, decision) }
+            if (value.isBlank() || value.trim() == unit.text.trim()) { report(PaintDecision.UNCHANGED); return@forEachIndexed }
             val original = unit.box.clip(bitmap.width, bitmap.height)
-            if (original.width < 5 || original.height < 5 || protected.any { it.overlaps(original) }) return@forEachIndexed
+            if (original.width < 5 || original.height < 5) { report(PaintDecision.NO_ROOM); return@forEachIndexed }
+            if (protected.any { it.overlaps(original) }) { report(PaintDecision.PROTECTED); return@forEachIndexed }
             val avoid = protected + drawnAreas + units.mapIndexedNotNull { i, other -> other.box.takeIf { i != index } }
+            if (unit.lines.any { line -> avoid.any { it.overlaps(line) } }) { report(PaintDecision.COLLISION); return@forEachIndexed }
             val margin = (unit.sizeHint * .29f).roundToInt().coerceIn(2, 18)
             val roomy = original.expand(if (unit.vertical) margin * 2 else margin, margin).clip(bitmap.width, bitmap.height)
             val drawBox = if (surface != null && !unit.vertical) surface.fitRoom(original, unit.lines, unit.sizeHint, avoid) ?: original
@@ -49,8 +54,8 @@ internal class ImageRenderer(private val context: Context) {
             val paint = TextPaint(Paint.ANTI_ALIAS_FLAG or Paint.SUBPIXEL_TEXT_FLAG).apply {
                 typeface = if (target in naskhTargets) naskh else Typeface.create("sans-serif", Typeface.NORMAL)
             }
-            val layout = fitted(value.trim(), paint, drawBox, unit.sizeHint, rtl) ?: return@forEachIndexed
-            if (unit.lines.any { line -> avoid.any { it.overlaps(line) } }) return@forEachIndexed
+            val layout = fitted(value.trim(), paint, drawBox, unit.sizeHint, rtl)
+            if (layout == null) { report(PaintDecision.NO_ROOM); return@forEachIndexed }
             val tones = unit.lines.map { line ->
                 val padded = line.expand(2, 2).clip(bitmap.width, bitmap.height)
                 val box = if (avoid.any { padded.overlaps(it) }) line.clip(bitmap.width, bitmap.height) else padded
@@ -77,6 +82,7 @@ internal class ImageRenderer(private val context: Context) {
             canvas.restore()
             drawnAreas += drawBox
             count++
+            report(PaintDecision.DRAWN)
         }
         return count
     }

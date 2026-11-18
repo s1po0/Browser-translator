@@ -55,6 +55,16 @@ class ComicOcrTest {
         assertEquals(listOf(Box(15, 125, 128, 147)), layout.protected)
     }
 
+    @Test fun `recovered lettering replaces its partial word boxes without leaving overlapping overlays`() {
+        val partial = listOf(
+            OcrLine("WAS", Box(33, 20, 53, 28), emptyList(), 0),
+            OcrLine("ONG.", Box(71, 20, 94, 28), emptyList(), 1),
+        )
+        val recovered = OcrLine("I WAS WRONG.", Box(19, 18, 95, 30), emptyList(), 2, confidence = .91f)
+        val result = reconcileComicOcr(partial, listOf(recovered), explicit = true) { true }
+        assertEquals(listOf(recovered.copy(block = 0)), result)
+    }
+
     @Test fun `aligned menu rows with separate price labels do not merge in comic mode`() {
         val lines = listOf(line("TEA OF THE DAY", 15, 20), line("SOUP OF THE DAY", 15, 54), line("$2.50", 180, 20), line("$3.50", 180, 54))
         val layout = groupForImage(OcrPage(lines, false, comic = true)) { _, _ -> true }
@@ -69,7 +79,7 @@ class ComicOcrTest {
         val retry = RecordingTranslator { texts -> texts.map { if (it == dialogue) "ئامانجم تێکچوو و سەرنجم لەدەست دا." else if (it == "YOU") "تۆ" else "لینکەکە بکەرەوە" } }
         val translated = translateImageWords(inputs.map(::unit), "ckb", true, mock, retry)
         assertEquals(listOf(Call(inputs, "en", "ckb")), mock.calls)
-        assertEquals(inputs.map { Call(listOf(it), "en", "ckb") }, retry.calls)
+        assertEquals(inputs.filterNot { it == "YOU" }.map { Call(listOf(it), "en", "ckb") }, retry.calls)
         assertEquals(listOf("ئامانجم تێکچوو و سەرنجم لەدەست دا.", "تۆ", inputs.last()), translated)
     }
 
@@ -89,7 +99,7 @@ class ComicOcrTest {
         assertEquals(listOf("NO!"), translateImageWords(listOf(unit("NO!")), "ckb", false, base, retry))
         val context = "I THINK WE CAN STILL WIN."
         assertEquals(listOf(context, "تۆ؟"), translateImageWords(listOf(unit(context), unit("YOU?")), "ckb", false, base, retry))
-        assertTrue(retry.calls.any { it.input == listOf("YOU?") && it.source == "en" })
+        assertFalse("Known short replies don't require a second network call", retry.calls.any { it.input == listOf("YOU?") })
     }
 
     @Test fun `review fixes grounded fused words but does not guess text on an unrelated background`() {
