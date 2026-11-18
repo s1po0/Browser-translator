@@ -99,7 +99,7 @@ class ReaderSmokeTest {
         }
     }
 
-    @Test fun JapaneseAndKoreanUseRealScriptModelsAndPreserveMenuPricePixels() = runBlocking {
+    @Test fun JapaneseKoreanAndEnglishUseRealScriptModelsAndPreserveMenuPricePixels() = runBlocking {
         withTimeout(100_000) {
             ImagePipeline(instrumentation.targetContext).use { image ->
                 val provider = SampleProvider()
@@ -114,13 +114,26 @@ class ReaderSmokeTest {
                 }
                 val menu = instrumentation.targetContext.assets.open("demo/menu.png").use { it.readBytes() }
                 val before = image.preview(menu)
-                val after = image.gallery(menu, ReaderOptions("ckb", false, true, "latin", false), providers, true).bitmap
-                assertNotNull(after)
-                for (y in 194..432 step 2) for (x in 750..875 step 2) {
-                    assertEquals("Menu prices must stay at ($x,$y)", before.getPixel(x, y), after!!.getPixel(x, y))
-                }
-                before.recycle()
-                after!!.recycle()
+                try {
+                    val recognized = MlKitOcrProvider().use {
+                        it.recognize(before, OcrHint(ENGLISH_IMAGE_LANGUAGE, "ja", enhanced = false))
+                    }
+                    assertEquals("Explicit English wins over the hosting page's language", Script.LATIN, recognized.script)
+                    assertTrue(recognized.lines.any { it.text.contains("mint tea", ignoreCase = true) })
+                    provider.inputs.clear()
+                    provider.sources.clear()
+                    val after = image.gallery(menu, ReaderOptions("ckb", false, true, ENGLISH_IMAGE_LANGUAGE, false), providers, true).bitmap
+                    try {
+                        assertNotNull("Rendered English menu", after)
+                        assertTrue("English menu requests: ${provider.sources}", provider.sources.isNotEmpty() && provider.sources.all { it == "en" })
+                        assertTrue(provider.inputs.any { it.contains("mint tea", ignoreCase = true) })
+                        assertTrue(provider.inputs.none { "$3.50" in it })
+                        for (y in 194..432 step 2) for (x in 750..875 step 2) {
+                            assertEquals("Menu prices must stay at ($x,$y)", before.getPixel(x, y), after!!.getPixel(x, y))
+                        }
+                        Log.i("SipanComicSmoke", "English image mode: Latin OCR overrides page hint; menu uses MT source en and preserves price pixels")
+                    } finally { after?.recycle() }
+                } finally { before.recycle() }
             }
         }
     }
@@ -199,8 +212,9 @@ class ReaderSmokeTest {
     private class SampleProvider : TranslationProvider {
         val inputs = CopyOnWriteArrayList<String>()
         val targets = CopyOnWriteArrayList<String>()
+        val sources = CopyOnWriteArrayList<String>()
         override suspend fun translate(texts: List<String>, source: String, target: String): List<String> {
-            inputs.addAll(texts); targets += target
+            inputs.addAll(texts); targets += target; sources += source
             return texts.map { if (it == "Beyond the hill") "لە پشت گردەکە" else "سڵاو، هاوڕێ!" }
         }
     }

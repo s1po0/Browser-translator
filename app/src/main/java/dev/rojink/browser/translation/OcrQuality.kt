@@ -3,6 +3,7 @@ package dev.rojink.browser.translation
 import kotlin.math.max
 import kotlin.math.min
 
+internal const val ENGLISH_IMAGE_LANGUAGE = "en"
 internal enum class Script { LATIN, JAPANESE, KOREAN, CHINESE, DEVANAGARI }
 
 private fun Char.matches(script: Script): Boolean {

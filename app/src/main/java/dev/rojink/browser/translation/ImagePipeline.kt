@@ -201,7 +201,7 @@ internal class ImagePipeline(
             } }
             if (layout.units.isEmpty()) return ImageFrame.Original(keptText = missed)
             val translations = timed("translate") {
-                translateImageWords(layout.units, options.target, options.script == ENGLISH_COMIC_SCRIPT, providers.imageTranslator, providers.imageRetry)
+                translateImageWords(layout.units, options.target, options.script, providers.imageTranslator, providers.imageRetry)
             }
             val drawn = timed("paint") { withContext(Dispatchers.Default) {
                 renderer.paint(bitmap, layout.units, translations.map { it.take(2000) }, layout.protected, options.target, comic,
@@ -231,7 +231,7 @@ internal class ImagePipeline(
                     val scan = timed("strip OCR") { source.scan(bitmap, onDevice, hint) } ?: return@withContext null
                     if (scan.readings.isEmpty()) return@withContext ImageFrame.Original(keptText = scan.suspectedMiss)
                     val translations = timed("translate") {
-                        translateImageWords(scan.readings.map { it.unit }, options.target, options.script == ENGLISH_COMIC_SCRIPT,
+                        translateImageWords(scan.readings.map { it.unit }, options.target, options.script,
                             providers.imageTranslator, providers.imageRetry)
                     }
                     val drawn = timed("strip paint") {

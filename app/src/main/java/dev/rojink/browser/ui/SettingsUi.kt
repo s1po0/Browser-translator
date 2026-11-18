@@ -5,16 +5,21 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import dev.rojink.browser.R
@@ -24,6 +29,7 @@ import dev.rojink.browser.data.Bookmark
 import dev.rojink.browser.data.BrowserSettings
 import dev.rojink.browser.search.AddressSearchMode
 import dev.rojink.browser.translation.ENGLISH_COMIC_SCRIPT
+import dev.rojink.browser.translation.ENGLISH_IMAGE_LANGUAGE
 import dev.rojink.browser.web.Browser
 import kotlin.math.roundToInt
 
@@ -48,7 +54,8 @@ import kotlin.math.roundToInt
     val locales = listOf("system" to tr(R.string.system), "en" to "English", "ckb" to "کوردیی سۆرانی")
     val scripts = ocrChoices()
     fun asName(list: List<Pair<String, String>>, current: String) = list.toMap()[current]
-    LazyColumn(contentPadding = PaddingValues(vertical = 10.dp, horizontal = 14.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+    LazyColumn(Modifier.testTag("reader-settings-list"), contentPadding = PaddingValues(vertical = 10.dp, horizontal = 14.dp),
+        verticalArrangement = Arrangement.spacedBy(3.dp)) {
         item { Section(R.string.appearance) }
         item { SettingRow(R.string.language, asName(locales, settings.uiLanguage)) { chooser = Choice(R.string.language, locales, settings.uiLanguage) { value -> update { it.copy(uiLanguage = value) } } } }
         item { SettingRow(R.string.theme, asName(themes, settings.theme)) { chooser = Choice(R.string.theme, themes, settings.theme) { value -> update { it.copy(theme = value) } } } }
@@ -110,7 +117,8 @@ import kotlin.math.roundToInt
     }
 }
 
-@Composable internal fun ocrChoices() = listOf("auto" to tr(R.string.automatic), ENGLISH_COMIC_SCRIPT to tr(R.string.english_comics),
+@Composable internal fun ocrChoices() = listOf("auto" to tr(R.string.automatic),
+    ENGLISH_IMAGE_LANGUAGE to tr(R.string.english), ENGLISH_COMIC_SCRIPT to tr(R.string.english_comics),
     "ja" to tr(R.string.japanese), "ko" to tr(R.string.korean), "zh" to tr(R.string.chinese),
     "latin" to tr(R.string.latin), "devanagari" to tr(R.string.devanagari))
 
@@ -130,9 +138,11 @@ import kotlin.math.roundToInt
 internal data class Choice(val title: Int, val values: List<Pair<String, String>>, val current: String, val pick: (String) -> Unit = {})
 @Composable internal fun ChoiceDialog(choice: Choice, dismiss: () -> Unit, pick: (String) -> Unit) {
     AlertDialog(onDismissRequest = dismiss, title = { Text(tr(choice.title)) }, text = {
-        Column {
+        Column(Modifier.selectableGroup().verticalScroll(rememberScrollState())) {
             choice.values.forEach { (value, title) ->
-                ListItem(headlineContent = { Text(title) }, leadingContent = { RadioButton(choice.current == value, onClick = null) }, modifier = Modifier.clickable { pick(value) })
+                val selected = choice.current == value
+                ListItem(headlineContent = { Text(title) }, leadingContent = { RadioButton(selected, onClick = null) },
+                    modifier = Modifier.selectable(selected = selected, role = Role.RadioButton, onClick = { pick(value) }))
             }
         }
     }, confirmButton = { TextButton(onClick = dismiss) { Text(tr(R.string.cancel)) } })

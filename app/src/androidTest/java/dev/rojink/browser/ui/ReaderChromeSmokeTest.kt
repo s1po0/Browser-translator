@@ -7,6 +7,7 @@ import android.view.WindowManager
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -18,6 +19,7 @@ import dev.rojink.browser.search.WebSafeSearch
 import dev.rojink.browser.search.WebSearchFilters
 import dev.rojink.browser.search.WebSearchRequest
 import dev.rojink.browser.search.braveSearchUrl
+import dev.rojink.browser.translation.ENGLISH_IMAGE_LANGUAGE
 import dev.rojink.browser.web.BrowserTab
 import dev.rojink.browser.web.DocumentFeatures
 import kotlinx.coroutines.flow.first
@@ -200,6 +202,30 @@ class ReaderChromeSmokeTest {
             val hint = if (mode == AddressSearchMode.DEVICE) "Enter a link or search this device" else "Enter a link or search"
             compose.waitUntil(8_000) { compose.onAllNodes(hasText(hint)).fetchSemanticsNodes().isNotEmpty() }
             block(requests)
+        } finally { runBlocking { store.update { prefs } } }
+    }
+
+    @Test fun settingsOfferPlainEnglishAndRememberItSeparatelyFromEnglishComics() {
+        val store = (compose.activity.application as RojInkApp).settings
+        val prefs = runBlocking { store.values.first() }
+        runBlocking { store.update { it.copy(uiLanguage = "en", ocrHint = "auto") } }
+        val settings = hasText("Settings") and hasClickAction()
+        val imageLanguage = hasText("Image text language or script") and hasClickAction()
+        fun option(label: String) = compose.onNode(hasText(label) and SemanticsMatcher.keyIsDefined(SemanticsProperties.Selected))
+        try {
+            compose.waitUntil(8_000) { compose.onAllNodes(settings).fetchSemanticsNodes().isNotEmpty() }
+            compose.onNode(settings).activate()
+            compose.onNodeWithTag("reader-settings-list").performScrollToNode(imageLanguage)
+            compose.onNode(imageLanguage).activate()
+            option("Auto-detect").assertIsSelected()
+            option("English comics").assertIsNotSelected()
+            option("English").assertIsNotSelected().activate()
+
+            runBlocking { withTimeout(8_000) { store.values.first { it.ocrHint == ENGLISH_IMAGE_LANGUAGE } } }
+            compose.waitUntil(8_000) { compose.onAllNodes(imageLanguage and hasText("English")).fetchSemanticsNodes().isNotEmpty() }
+            compose.onNode(imageLanguage).activate()
+            option("English").assertIsSelected()
+            option("English comics").assertIsNotSelected()
         } finally { runBlocking { store.update { prefs } } }
     }
 

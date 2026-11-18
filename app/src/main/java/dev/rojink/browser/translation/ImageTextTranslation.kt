@@ -67,7 +67,7 @@ internal fun validImageTranslation(before: String, after: String, source: String
 
 /** Keep whole dialogue together, then bypass batch markers and stale cache for suspect bubbles. */
 internal suspend fun translateImageWords(
-    units: List<TextUnit>, target: String, explicitEnglish: Boolean,
+    units: List<TextUnit>, target: String, script: String,
     provider: TranslationProvider, retryProvider: TranslationProvider,
 ): List<String> {
     val input = units.map { it.text }
@@ -76,7 +76,11 @@ internal suspend fun translateImageWords(
     val retry = linkedMapOf<Pair<String, String>, MutableList<Int>>()
     fun polish(text: String) = if (target == "ckb") polishSorani(text) else text
     for ((source, indices) in input.indices.groupBy { idx ->
-        if (explicitEnglish && !units[idx].vertical && englishLettering(input[idx])) "en" else "auto"
+        when {
+            script == ENGLISH_IMAGE_LANGUAGE -> ENGLISH_IMAGE_LANGUAGE
+            script == ENGLISH_COMIC_SCRIPT && !units[idx].vertical && englishLettering(input[idx]) -> ENGLISH_IMAGE_LANGUAGE
+            else -> "auto"
+        }
     }) {
         if (source.equals(target, ignoreCase = true)) continue
         val batch = try { provider.translate(indices.map(input::get), source, target) }

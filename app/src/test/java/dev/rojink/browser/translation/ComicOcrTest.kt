@@ -33,6 +33,7 @@ class ComicOcrTest {
         assertTrue(useComicOcr(page("YOU CAN TRY", Script.LATIN), auto))
         assertFalse(useComicOcr(page("YOU CAN TRY", Script.LATIN), auto.copy(enhanced = false)))
         assertTrue(useComicOcr(page("YOU", Script.LATIN), OcrHint(ENGLISH_COMIC_SCRIPT, "", enhanced = false)))
+        assertFalse(useComicOcr(page("YOU CAN TRY", Script.LATIN), OcrHint(ENGLISH_IMAGE_LANGUAGE, "en-US")))
     }
 
     @Test fun `uses the extra reading to fix spacing and recover missing words without replacing a price`() {
@@ -80,12 +81,23 @@ class ComicOcrTest {
         }
     }
 
+    @Test fun `plain English uses en even for accented labels and Latin still uses auto`() = runBlocking {
+        val texts = listOf("TEA OF THE DAY", "Crème brûlée")
+        val reply = listOf("چای ئەمڕۆ", "شیرینی")
+        for ((mode, expectedSource) in listOf(ENGLISH_IMAGE_LANGUAGE to "en", "latin" to "auto")) {
+            val provider = RecordingTranslator { reply }
+            val retry = RecordingTranslator { error("Valid menu translations do not require retries") }
+            assertEquals(reply, translateImageWords(texts.map(::unit), "ckb", mode, provider, retry))
+            assertEquals(listOf(Call(texts, expectedSource, "ckb")), provider.calls)
+        }
+    }
+
     @Test fun `Sorani fallback retries the whole unit and leaves bad results in the original pixels`() = runBlocking {
         val dialogue = "MY AIM WAS OFF, AND I LOST FOCUS AFTER I TOOK A LONG BREAK."
         val inputs = listOf(dialogue, "YOU", "Open https://example.com now")
         val mock = RecordingTranslator { texts -> texts.map { if (it == dialogue) "MY کە تێکچوو" else it } }
         val retry = RecordingTranslator { texts -> texts.map { if (it == dialogue) "ئامانجم تێکچوو و سەرنجم لەدەست دا." else if (it == "YOU") "تۆ" else "لینکەکە بکەرەوە" } }
-        val translated = translateImageWords(inputs.map(::unit), "ckb", true, mock, retry)
+        val translated = translateImageWords(inputs.map(::unit), "ckb", ENGLISH_COMIC_SCRIPT, mock, retry)
         assertEquals(listOf(Call(inputs, "en", "ckb")), mock.calls)
         assertEquals(inputs.filterNot { it == "YOU" }.map { Call(listOf(it), "en", "ckb") }, retry.calls)
         assertEquals(listOf("ئامانجم تێکچوو و سەرنجم لەدەست دا.", "تۆ", inputs.last()), translated)
@@ -95,7 +107,7 @@ class ComicOcrTest {
         val inputs = (1..12).map { "You can try $it" } + listOf("こんにちは", "안녕하세요")
         val base = RecordingTranslator { it }
         val retry = RecordingTranslator { it }
-        assertEquals(inputs, translateImageWords(inputs.map(::unit), "ckb", false, base, retry))
+        assertEquals(inputs, translateImageWords(inputs.map(::unit), "ckb", "auto", base, retry))
         assertEquals(listOf(Call(inputs, "auto", "ckb")), base.calls)
         assertEquals(inputs.take(8).map { Call(listOf(it), "auto", "ckb") }, retry.calls)
     }
@@ -103,10 +115,10 @@ class ComicOcrTest {
     @Test fun `a standalone English YOU can be translated locally if Google leaves it unchanged`() = runBlocking {
         val base = RecordingTranslator { it }
         val retry = RecordingTranslator { it }
-        assertEquals(listOf("تۆ؟", "نەخێر!"), translateImageWords(listOf(unit("YOU?"), unit("NO!")), "ckb", true, base, retry))
-        assertEquals(listOf("NO!"), translateImageWords(listOf(unit("NO!")), "ckb", false, base, retry))
+        assertEquals(listOf("تۆ؟", "نەخێر!"), translateImageWords(listOf(unit("YOU?"), unit("NO!")), "ckb", ENGLISH_COMIC_SCRIPT, base, retry))
+        assertEquals(listOf("NO!"), translateImageWords(listOf(unit("NO!")), "ckb", "auto", base, retry))
         val context = "I THINK WE CAN STILL WIN."
-        assertEquals(listOf(context, "تۆ؟"), translateImageWords(listOf(unit(context), unit("YOU?")), "ckb", false, base, retry))
+        assertEquals(listOf(context, "تۆ؟"), translateImageWords(listOf(unit(context), unit("YOU?")), "ckb", "auto", base, retry))
         assertFalse("Known short replies don't require a second network call", retry.calls.any { it.input == listOf("YOU?") })
     }
 
