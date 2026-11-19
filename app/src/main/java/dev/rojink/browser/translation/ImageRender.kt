@@ -26,6 +26,7 @@ internal data class PaintDestination(val canvas: Canvas, val obstacles: List<Box
 /** Rewrite only OCR boxes, leaving numbers, surrounding illustration, and the page layout in place. */
 internal class ImageRenderer(private val context: Context) {
     private val naskh by lazy { ResourcesCompat.getFont(context, R.font.noto_naskh_arabic) ?: Typeface.DEFAULT }
+    private val rudaw by lazy { ResourcesCompat.getFont(context, R.font.rudaw_regular) ?: naskh }
 
     fun paint(
         bitmap: Bitmap, input: List<TextUnit>, translated: List<String>, protected: List<Box>, target: String,
@@ -60,7 +61,11 @@ internal class ImageRenderer(private val context: Context) {
                 else if (avoid.any { roomy.overlaps(it) && !original.overlaps(it) }) original else roomy
             val rtl = target in rtlTargets
             val paint = TextPaint(Paint.ANTI_ALIAS_FLAG or Paint.SUBPIXEL_TEXT_FLAG).apply {
-                typeface = if (target in naskhTargets) naskh else Typeface.create("sans-serif", Typeface.NORMAL)
+                typeface = when {
+                    target == "ckb" -> rudaw
+                    target in naskhTargets -> naskh
+                    else -> Typeface.create("sans-serif", Typeface.NORMAL)
+                }
             }
             val preferredMin = if (surface != null && drawBox != original && destination != null) {
                 (8f / destination.scale).coerceIn(8f, 15f)
