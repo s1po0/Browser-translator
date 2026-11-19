@@ -162,8 +162,20 @@ internal fun findComicBubbles(
     return result
 }
 
-internal fun comicBubbleFor(box: Box, bubbles: List<ComicBubble>): ComicBubble? = bubbles.asSequence().filter { it.contains(box) }
-    .minByOrNull { it.bounds.width * it.bounds.height }
+internal fun comicBubbleFor(box: Box, bubbles: List<ComicBubble>): ComicBubble? {
+    var closest: ComicBubble? = null
+    var smallest = Int.MAX_VALUE
+    // Hot on overlapping strip windows. Avoid a chain of captured sequence iterators for every OCR box.
+    for (i in bubbles.indices) {
+        val bubble = bubbles[i]
+        val area = bubble.bounds.width * bubble.bounds.height
+        if (area < smallest && bubble.contains(box)) {
+            smallest = area
+            closest = bubble
+        }
+    }
+    return closest
+}
 
 /** Don't spend a second detection pass on a bubble whose ink bands are already represented. */
 internal fun missedBubbleBands(bubble: ComicBubble, lines: List<OcrLine>): List<Box> = bubble.bands.filter { band ->

@@ -249,6 +249,16 @@ class ComicOcrTest {
         assertFalse(preferLatinReview(PaddleText("YOU", .99f), PaddleText("TRY", .99f), null))
     }
 
+    @Test fun `enclosure lookup keeps the smallest containing proposal and prefers the first tie`() {
+        val ink = Box(17, 18, 49, 33)
+        val large = ComicBubble(Box(0, 0, 100, 70), listOf(ink), false)
+        val small = ComicBubble(Box(10, 10, 63, 50), listOf(ink), false)
+        val twin = small.copy(dark = true)
+        val nearby = ComicBubble(Box(34, 18, 55, 38), emptyList(), false)
+        assertTrue(comicBubbleFor(ink, listOf(large, nearby, small, twin)) === small)
+        assertNull(comicBubbleFor(Box(150, 150, 200, 160), listOf(large, small)))
+    }
+
     @Test fun `an enclosure permits wider leading and blocks merging a neighboring balloon`() {
         val first = line("I…", 15, 10, 1)
         val second = line("I MISSED YOU.", 15, 66, 2)
