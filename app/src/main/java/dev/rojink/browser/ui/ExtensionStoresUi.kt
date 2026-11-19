@@ -16,6 +16,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.text.style.TextOverflow
@@ -41,7 +42,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 @Composable internal fun ExtensionStoresScreen(
-    stores: ExtensionStores, installer: ExtensionInstaller, onBack: () -> Unit, onReadWebsite: (String) -> Unit,
+    stores: ExtensionStores, installer: ExtensionInstaller, onBack: () -> Unit, onReadWebsite: (String?) -> Unit,
 ) {
     val stream = remember(stores) { stores.saved.map { Result.success(it) }.catch { emit(Result.failure(it)) } }
     val saved by stream.collectAsState(initial = null)
@@ -49,17 +50,27 @@ import kotlinx.coroutines.launch
     var openStore by remember { mutableStateOf<SavedExtensionStore?>(null) }
     var initialCatalog by remember { mutableStateOf<ExtensionCatalog?>(null) }
     var showInstalled by rememberSaveable { mutableStateOf(false) }
+    var selectedInstalled by remember { mutableStateOf<InstalledExtension?>(null) }
     var scanRequest by remember { mutableIntStateOf(0) }
     val scan = rememberInstalledScan(scanRequest)
     val current = openStore
     fun closeCatalog() { openStore = null; initialCatalog = null }
-    fun closeInstalled() { showInstalled = false }
+    fun closeInstalled() { showInstalled = false; selectedInstalled = null }
     BackHandler(enabled = current != null || showInstalled) {
         if (showInstalled) closeInstalled() else closeCatalog()
     }
     if (showInstalled) {
         ScreenHeader(R.string.store_device_installed, ::closeInstalled)
-        InstalledExtensionsPage(scan) { scanRequest++ }
+        InstalledExtensionsPage(scan, onScan = { scanRequest++ }, onOpen = { selectedInstalled = it })
+        if (addAddress == null) selectedInstalled?.let { picked ->
+            InstalledSourceDialog(picked, stores, saved, onAddStore = { addAddress = it },
+                onDismiss = { selectedInstalled = null }, onReadWebsite = { url ->
+                    if (showInstalled && selectedInstalled == picked && addAddress == null) {
+                        selectedInstalled = null
+                        onReadWebsite(url)
+                    }
+                })
+        }
     } else if (current != null) {
         ScreenHeader(R.string.extensions, ::closeCatalog)
         key(current.indexUrl) {
@@ -107,8 +118,11 @@ import kotlinx.coroutines.launch
     addAddress?.let { address ->
         AddStoreDialog(stores, address, onDismiss = { addAddress = null }) { catalog ->
             addAddress = null
-            initialCatalog = catalog
-            openStore = catalog.store
+            // From the installed list, resolve the selected extension against the newly approved store.
+            if (!showInstalled) {
+                initialCatalog = catalog
+                openStore = catalog.store
+            }
         }
     }
 }
@@ -129,7 +143,7 @@ import kotlinx.coroutines.launch
                 if (checked == null) {
                     Text(tr(R.string.store_input_hint))
                     OutlinedTextField(input, { if (it.length <= MAX_STORE_URL * 3) { input = it; error = 0 } },
-                        modifier = Modifier.fillMaxWidth(), label = { Text(tr(R.string.store_index_address)) },
+                        modifier = Modifier.fillMaxWidth().testTag("extension-store-address"), label = { Text(tr(R.string.store_index_address)) },
                         textStyle = LocalTextStyle.current.copy(textDirection = TextDirection.Ltr),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri), maxLines = 3, enabled = !busy)
                 } else {
@@ -152,7 +166,7 @@ import kotlinx.coroutines.launch
                     try {
                         if (checked == null) preview = stores.preview(input)
                         else {
-                            stores.add(checked.store)
+                            stores.add(checked)
                             onAdd(checked)
                         }
                     } catch (e: CancellationException) { throw e }
@@ -324,12 +338,12 @@ import kotlinx.coroutines.launch
     }, dismissButton = { TextButton(onDismiss) { Text(tr(R.string.cancel)) } })
 }
 
-@Composable private fun StoreAddress(address: String, lines: Int = 4) {
+@Composable internal fun StoreAddress(address: String, lines: Int = 4) {
     Text(address, style = MaterialTheme.typography.bodySmall.copy(textDirection = TextDirection.Ltr),
         color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = lines, overflow = TextOverflow.Ellipsis)
 }
 
-@Composable private fun StoreStatus(id: Int, error: Boolean = false) {
+@Composable internal fun StoreStatus(id: Int, error: Boolean = false) {
     Text(tr(id), style = MaterialTheme.typography.bodyMedium,
         color = if (error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(vertical = 5.dp))

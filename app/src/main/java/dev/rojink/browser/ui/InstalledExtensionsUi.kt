@@ -3,6 +3,7 @@ package dev.rojink.browser.ui
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material3.*
@@ -52,8 +53,11 @@ import kotlinx.coroutines.CancellationException
     }
 }
 
-@Composable internal fun InstalledExtensionsPage(scan: Result<Map<String, InstalledExtension>>?, onScan: () -> Unit) {
+@Composable internal fun InstalledExtensionsPage(
+    scan: Result<Map<String, InstalledExtension>>?, onScan: () -> Unit, onOpen: (InstalledExtension) -> Unit,
+) {
     var query by rememberSaveable { mutableStateOf("") }
+    val listState = rememberLazyListState()
     val visible = remember(scan, query) {
         val terms = extensionSearchTerms(query)
         scan?.getOrNull().orEmpty().values.filter { extension -> terms.all(extension::matches) }
@@ -70,14 +74,18 @@ import kotlinx.coroutines.CancellationException
                 OutlinedTextField(query, { if (it.length <= 200) query = it }, modifier = Modifier.fillMaxWidth(), singleLine = true,
                     label = { Text(tr(R.string.store_device_search)) })
                 if (visible.isEmpty()) Text(tr(R.string.store_no_matches), style = MaterialTheme.typography.bodyMedium)
-                LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                LazyColumn(Modifier.weight(1f), state = listState, verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     items(visible, key = { it.packageName }) { extension ->
-                        OutlinedCard(Modifier.fillMaxWidth()) {
-                            Column(Modifier.padding(horizontal = 14.dp, vertical = 9.dp)) {
-                                Text(extension.name, style = MaterialTheme.typography.titleMedium)
-                                Text(tr(R.string.store_local_version, extension.version), style = MaterialTheme.typography.bodySmall)
-                                Text(extension.packageName, maxLines = 2, overflow = TextOverflow.Ellipsis,
-                                    style = MaterialTheme.typography.bodySmall.copy(textDirection = TextDirection.Ltr))
+                        OutlinedCard(onClick = { onOpen(extension) }, modifier = Modifier.fillMaxWidth()) {
+                            Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 9.dp),
+                                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(extension.name, style = MaterialTheme.typography.titleMedium)
+                                    Text(tr(R.string.store_local_version, extension.version), style = MaterialTheme.typography.bodySmall)
+                                    Text(extension.packageName, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                                        style = MaterialTheme.typography.bodySmall.copy(textDirection = TextDirection.Ltr))
+                                }
+                                Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null)
                             }
                         }
                     }

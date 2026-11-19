@@ -47,7 +47,14 @@
     <string name="store_apk_rejected">APK ڕەت کرایەوە: پاکێج، وەشان، زانیاریی ئەکستێنشن، قەبارە یان واژوو پشکنینەکەی تێنەپەڕاند.</string>
     <string name="store_device_installed">دامەزراوەکانی ئەم ئامێرە</string>
     <string name="store_device_count">%1$d ئەکستێنشن لەم پرۆفایلەی ئەندرۆیددا</string>
-    <string name="store_device_scope">پشکنینەکە لەسەر ئامێرەکەتە. تەنها APK ـە هاوبەشەکانی ئەم پرۆفایلەی ئەندرۆید پیشان دەدرێن. بۆ لینکی سایت، ئەکستێنشنەکە لە کاتەلۆگ بکەوە.</string>
+    <string name="store_device_scope">لەسەر ئەکستێنشنێکی دامەزراو لێ بدە تا سایتەکەی لە خوێنەری سەرچاوەکان بکرێتەوە. لینکەکان لە کاتەلۆگی پەسەندکراو دێن؛ لیستی APK ـەکانت لەسەر ئامێرەکەت دەمێنێتەوە.</string>
+    <string name="store_device_link_search">گەڕان بەدوای لینکی سایت لە کاتەلۆگە پەسەندکراوەکان…</string>
+    <string name="store_device_link_no_stores">هێشتا هیچ کاتەلۆگێک پەسەند نەکراوە. ستۆری ئەکستێنشنەکە زیاد بکە، یان لینکی سایت یان چەپتەری خۆت بەکاربهێنە.</string>
+    <string name="store_device_link_no_signer">واژووی ئەم APK ـە لەگەڵ هیچ کاتەلۆگێکی پەسەندکراو ناگونجێت. ستۆرەکەی زیاد بکە یان لینکی خۆت بەکاربهێنە.</string>
+    <string name="store_device_link_missing">لە کاتەلۆگە گونجاوەکاندا لینکی HTTPS بۆ ئەم ئەکستێنشنە نییە. دەتوانیت لینکی خۆت بەکاربهێنیت.</string>
+    <string name="store_device_link_unavailable">هەموو کاتەلۆگە گونجاوەکان نەخوێندرانەوە. ئینتەرنێت بپشکنە و دووبارە هەوڵ بدە، یان لینکێک ڕاستەوخۆ بەکاربهێنە.</string>
+    <string name="store_device_pick_website">سایتێک هەڵبژێرە تا لە خوێنەری سەرچاوەکان بکرێتەوە.</string>
+    <string name="store_device_use_link">لینکی خۆم بەکاربهێنە</string>
     <string name="store_device_scanning">پشکنینی ئامێرەکە…</string>
     <string name="store_device_failed">دامەزراوەکان نەخوێندرانەوە. دووبارە پشکنین بکە.</string>
     <string name="store_device_rescan">پشکنینەوە</string>

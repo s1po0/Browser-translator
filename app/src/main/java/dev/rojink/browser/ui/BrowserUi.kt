@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -88,6 +89,7 @@ private enum class Screen(val title: Int) {
     var screen by remember { mutableStateOf(Screen.Browser) }
     var storesBack by remember { mutableStateOf(Screen.Browser) }
     var readerBack by remember { mutableStateOf(Screen.Browser) }
+    val storesState = rememberSaveableStateHolder()
     val bookmarksFlow = remember(browser) { browser.dao.bookmarks() }
     val bookmarks by bookmarksFlow.collectAsState(emptyList())
     val snackbar = remember { SnackbarHostState() }
@@ -143,7 +145,10 @@ private enum class Screen(val title: Int) {
         else if (target == Screen.Search) showSearch(webSearch ?: WebSearchRequest(""), onDevice = tab.incognito)
         else {
             browser.cancelPendingSearch()
-            if (target == Screen.ExtensionStores) storesBack = screen
+            if (target == Screen.ExtensionStores) {
+                storesBack = screen
+                storesState.removeState(Screen.ExtensionStores.name)
+            }
             screen = target
         }
     }
@@ -305,7 +310,9 @@ private enum class Screen(val title: Int) {
                     Screen.Downloads -> DownloadScreen(browser)
                     Screen.Settings -> SettingsScreen(browser, app, settings, bookmarks, clearTranslations,
                         { screen = Screen.Privacy }, { screen = Screen.About }, { open(Screen.ExtensionStores) })
-                    Screen.ExtensionStores -> ExtensionStoresScreen(app.extensionStores, app.extensionInstaller, ::finishScreen, ::openReader)
+                    Screen.ExtensionStores -> storesState.SaveableStateProvider(Screen.ExtensionStores.name) {
+                        ExtensionStoresScreen(app.extensionStores, app.extensionInstaller, ::finishScreen, ::openReader)
+                    }
                     Screen.SourceReader -> SourceReaderPage(browser, ::finishScreen, onTranslate, translationActive, translationBar)
                     Screen.Privacy -> InfoScreen(R.string.privacy_intro, R.string.privacy_body)
                     Screen.About -> InfoScreen(R.string.app_name, R.string.about_body)

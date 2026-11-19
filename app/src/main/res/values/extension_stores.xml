@@ -47,7 +47,14 @@
     <string name="store_apk_rejected">APK blocked: the package, version, extension metadata, size, or signature failed verification.</string>
     <string name="store_device_installed">Installed on this device</string>
     <string name="store_device_count">%1$d extension APKs on this Android profile</string>
-    <string name="store_device_scope">This check stays on your device. Only APKs shared with this Android profile are shown. For website links, open the matching catalog entry.</string>
+    <string name="store_device_scope">Tap an installed extension to open its website in Source reader. Links come from approved catalogs; your APK list stays on this device.</string>
+    <string name="store_device_link_search">Looking for a website in approved catalogs…</string>
+    <string name="store_device_link_no_stores">No catalogs are approved yet. Add the store the extension came from, or use your own website or chapter link.</string>
+    <string name="store_device_link_no_signer">No approved catalog matches this APK’s signing certificate. Add its store, or use your own link.</string>
+    <string name="store_device_link_missing">No HTTPS website is listed for this extension in the matching catalogs. You can use your own link.</string>
+    <string name="store_device_link_unavailable">Could not check all matching catalogs. Check your connection and try again, or use a link directly.</string>
+    <string name="store_device_pick_website">Choose a website to open in Source reader.</string>
+    <string name="store_device_use_link">Use my own link</string>
     <string name="store_device_scanning">Checking this device…</string>
     <string name="store_device_failed">Could not read installed extensions. Try scanning again.</string>
     <string name="store_device_rescan">Scan again</string>
