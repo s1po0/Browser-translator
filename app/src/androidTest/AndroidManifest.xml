@@ -1,0 +1,7 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Only the signed instrumentation APK is a harmless archive-verification fixture. -->
+    <uses-feature android:name="tachiyomi.extension" android:required="false" />
+    <application>
+        <meta-data android:name="tachiyomi.extension.class" android:value="dev.rojink.fixture.NotExecutable" />
+    </application>
+</manifest>

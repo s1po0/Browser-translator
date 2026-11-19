@@ -34,7 +34,7 @@ import dev.rojink.browser.web.Browser
 import kotlin.math.roundToInt
 
 @Composable internal fun SettingsScreen(browser: Browser, app: RojInkApp, settings: BrowserSettings, bookmarks: List<Bookmark>,
-    clearTranslations: suspend () -> Unit, onPrivacy: () -> Unit, onAbout: () -> Unit,
+    clearTranslations: suspend () -> Unit, onPrivacy: () -> Unit, onAbout: () -> Unit, onExtensionStores: () -> Unit,
 ) {
     val ctx = LocalContext.current
     val languages = remember(ctx) { Languages(ctx) }
@@ -67,6 +67,7 @@ import kotlin.math.roundToInt
             }
         }
         item { Section(R.string.browsing) }
+        item { SettingRow(R.string.extension_stores, tr(R.string.store_setting_detail), onClick = onExtensionStores) }
         item {
             SettingSwitch(R.string.search_setting_web, settings.addressSearch == AddressSearchMode.WEB,
                 supporting = tr(R.string.search_setting_web_detail)) { enabled ->

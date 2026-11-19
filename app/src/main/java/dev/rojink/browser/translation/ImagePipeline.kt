@@ -8,6 +8,7 @@ import android.graphics.Matrix
 import android.media.ExifInterface
 import android.net.Uri
 import dev.rojink.browser.web.origin
+import dev.rojink.browser.web.exchange
 import dev.rojink.browser.web.readLimited
 import dev.rojink.browser.web.sameSite
 import dev.rojink.browser.web.webUrl

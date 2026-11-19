@@ -72,6 +72,7 @@ import kotlinx.coroutines.delay
 private enum class Screen(val title: Int) {
     Browser(R.string.app_name), Search(R.string.sipan_search), Tabs(R.string.tabs), Bookmarks(R.string.bookmarks), History(R.string.history),
     Downloads(R.string.downloads), Settings(R.string.settings), Privacy(R.string.privacy), About(R.string.about),
+    ExtensionStores(R.string.extension_stores),
 }
 
 @Composable fun BrowserUi(
@@ -85,6 +86,7 @@ private enum class Screen(val title: Int) {
     translationBar: @Composable () -> Unit = {},
 ) {
     var screen by remember { mutableStateOf(Screen.Browser) }
+    var storesBack by remember { mutableStateOf(Screen.Browser) }
     val bookmarksFlow = remember(browser) { browser.dao.bookmarks() }
     val bookmarks by bookmarksFlow.collectAsState(emptyList())
     val snackbar = remember { SnackbarHostState() }
@@ -132,6 +134,7 @@ private enum class Screen(val title: Int) {
         if (target == Screen.Search) showSearch(webSearch ?: WebSearchRequest(""), onDevice = tab.incognito)
         else {
             browser.cancelPendingSearch()
+            if (target == Screen.ExtensionStores) storesBack = screen
             screen = target
         }
     }
@@ -151,7 +154,11 @@ private enum class Screen(val title: Int) {
     }
     fun finishScreen() {
         browser.cancelPendingSearch()
-        screen = if (screen == Screen.About || screen == Screen.Privacy) Screen.Settings else Screen.Browser
+        screen = when (screen) {
+            Screen.About, Screen.Privacy -> Screen.Settings
+            Screen.ExtensionStores -> storesBack
+            else -> Screen.Browser
+        }
     }
     BackHandler(enabled = video != null || screen != Screen.Browser || tab.find || tab.canBack) {
         if (video != null) browser.closeVideo() else if (screen != Screen.Browser) finishScreen() else browser.back()
@@ -266,7 +273,7 @@ private enum class Screen(val title: Int) {
             }
         } else {
             Column(Modifier.fillMaxSize().padding(inset).consumeWindowInsets(inset).imePadding()) {
-                ScreenHeader(screen.title, ::finishScreen)
+                if (screen != Screen.ExtensionStores) ScreenHeader(screen.title, ::finishScreen)
                 when (screen) {
                     Screen.Search -> key(tab.id) {
                         SipanSearchScreen(browser.dao, searchLaunch, tab.incognito, webFilters, ::configureSearch,
@@ -281,7 +288,9 @@ private enum class Screen(val title: Int) {
                         SavedPages(history.map { SavedPage(it.url, it.title) }, R.string.no_history, { if (browser.navigate(it)) screen = Screen.Browser })
                     }
                     Screen.Downloads -> DownloadScreen(browser)
-                    Screen.Settings -> SettingsScreen(browser, app, settings, bookmarks, clearTranslations, { screen = Screen.Privacy }, { screen = Screen.About })
+                    Screen.Settings -> SettingsScreen(browser, app, settings, bookmarks, clearTranslations,
+                        { screen = Screen.Privacy }, { screen = Screen.About }, { open(Screen.ExtensionStores) })
+                    Screen.ExtensionStores -> ExtensionStoresScreen(app.extensionStores, app.extensionInstaller, ::finishScreen, ::navigate)
                     Screen.Privacy -> InfoScreen(R.string.privacy_intro, R.string.privacy_body)
                     Screen.About -> InfoScreen(R.string.app_name, R.string.about_body)
                     else -> Unit
@@ -320,6 +329,7 @@ private enum class Screen(val title: Int) {
             item(R.string.bookmarks) { open(Screen.Bookmarks) }
             item(R.string.history) { open(Screen.History) }
             item(R.string.downloads) { open(Screen.Downloads) }
+            item(R.string.extension_stores) { open(Screen.ExtensionStores) }
             if (onPhoto != null) item(R.string.photo, action = onPhoto)
             item(R.string.settings) { open(Screen.Settings) }
         }

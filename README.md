@@ -79,6 +79,7 @@ When the target is Sorani, an on-device output pass spells common character name
 | --- | --- |
 | Browsing | Tabs/grid, optional Brave web search and independent on-device search, back/forward/reload, pull-to-refresh at the top of a page, find in page, desktop-site toggle, full-screen video, sharing, opening in another app |
 | Local library | Room bookmarks and history, standard Netscape HTML bookmark import/export, system DownloadManager and download status |
+| Extension stores | [Add and browse Keiyoushi or a compatible store](docs/extension-stores.md), open source websites in Sipan, or hand verified APKs to Android for use with compatible readers. Sipan does not run extension code. |
 | Images from phone | System photo picker (no broad storage access), the same OCR/translation pipeline, zoom, original/translation toggle, Save PNG and Share |
 | Appearance | System/light/dark theme, adjustable web text size, English and Sorani app UI with mirrored layouts, bundled OFL Noto Naskh Arabic for Sorani typesetting |
 | Privacy | Tracker domain blocklist and tab counter, isolated private tabs on compatible WebView versions, clear history/cookies/cache |

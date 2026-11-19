@@ -2,17 +2,15 @@ package dev.rojink.browser.translation
 
 import dev.rojink.browser.data.BrowserDao
 import dev.rojink.browser.data.CachedText
+import dev.rojink.browser.web.exchange
 import dev.rojink.browser.web.readLimited
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
-import okhttp3.Call
-import okhttp3.Callback
 import okhttp3.FormBody
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -20,7 +18,6 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
-import okhttp3.Response
 import org.json.JSONArray
 import org.json.JSONObject
 import org.jsoup.parser.Parser
@@ -28,8 +25,6 @@ import java.io.IOException
 import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
 import kotlin.random.Random
 
 interface TranslationProvider {
@@ -218,18 +213,6 @@ class TextCache(
 
 internal fun sha256(bytes: ByteArray): String = MessageDigest.getInstance("SHA-256").digest(bytes)
     .joinToString("") { "%02x".format(it.toInt() and 255) }
-
-/** Read on OkHttp's dispatcher, with cancellation closing the socket even during body reads. */
-internal suspend fun <T> OkHttpClient.exchange(request: Request, read: (Response) -> T): T = suspendCancellableCoroutine { continuation ->
-    val call = newCall(request)
-    continuation.invokeOnCancellation { call.cancel() }
-    call.enqueue(object : Callback {
-        override fun onFailure(call: Call, e: IOException) { continuation.resumeWithException(e) }
-        override fun onResponse(call: Call, response: Response) {
-            try { continuation.resume(response.use(read)) } catch (e: Exception) { continuation.resumeWithException(e) }
-        }
-    })
-}
 
 internal suspend fun OkHttpClient.read(request: Request, limit: Int): String = exchange(request) { response ->
     if (!response.isSuccessful) throw HttpFailure(response.code, response.header("Retry-After")?.toLongOrNull())

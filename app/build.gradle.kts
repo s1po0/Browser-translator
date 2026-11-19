@@ -1,6 +1,7 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.compose.compiler)
+    alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
 }
 
@@ -16,7 +17,7 @@ android {
         targetSdk = 37
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         versionCode = providers.gradleProperty("rojinkVersionCode").orNull?.toInt() ?: 1
-        versionName = "1.8.4"
+        versionName = "1.9.0"
     }
 
     val keyFile = System.getenv("ANDROID_KEYSTORE_FILE")?.takeIf { it.isNotBlank() }
@@ -69,6 +70,8 @@ dependencies {
     implementation(libs.androidx.datastore)
     implementation(libs.coroutines.android)
     implementation(libs.coroutines.tasks)
+    implementation(libs.serialization.json)
+    implementation(libs.serialization.protobuf)
     implementation(libs.mlkit.latin)
     implementation(libs.mlkit.chinese)
     implementation(libs.mlkit.japanese)
