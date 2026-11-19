@@ -154,9 +154,9 @@ class InstalledSourceSmokeTest {
     }
 
     private fun enterInstalled(fixture: InstalledExtension) {
-        await(hasText("Installed on this device") and hasClickAction())
-        click("Installed on this device")
-        await(hasText(fixture.packageName))
+        await(hasText("Installed on this device"))
+        compose.onNodeWithText("Installed on this device").performClick()
+        await(hasText(fixture.name))
     }
 
     private fun click(text: String) = compose.onNode(hasText(text) and hasClickAction()).activate()
