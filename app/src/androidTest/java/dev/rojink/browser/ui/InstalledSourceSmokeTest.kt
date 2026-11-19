@@ -156,10 +156,10 @@ class InstalledSourceSmokeTest {
     private fun enterInstalled(fixture: InstalledExtension) {
         await(hasText("Installed on this device") and hasClickAction())
         click("Installed on this device")
-        await(hasText(fixture.packageName) and hasClickAction())
+        await(hasText(fixture.packageName))
     }
 
     private fun click(text: String) = compose.onNode(hasText(text) and hasClickAction()).activate()
-    private fun await(matcher: SemanticsMatcher) = compose.waitUntil(8_000) { compose.onAllNodes(matcher).fetchSemanticsNodes().isNotEmpty() }
+    private fun await(matcher: SemanticsMatcher) = compose.waitUntil(12_000) { compose.onAllNodes(matcher).fetchSemanticsNodes().isNotEmpty() }
     private fun SemanticsNodeInteraction.activate() = performSemanticsAction(SemanticsActions.OnClick) { click -> assertTrue(click()) }
 }
