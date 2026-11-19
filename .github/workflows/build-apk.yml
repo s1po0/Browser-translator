@@ -103,3 +103,6 @@ jobs:
             printf -- '- [Download debug APK](%s)\n' "$DEBUG_URL"
             printf '\nSign in to GitHub, download the APK and open it directly on Android.\n'
           } >> "$GITHUB_STEP_SUMMARY"
+      - name: Audit the live Keiyoushi catalog and MANGA Plus APK
+        if: github.event_name == 'push' && contains(github.event.head_commit.message, '[keiyoushi-audit]')
+        run: bash tools/ci-keiyoushi-audit.sh

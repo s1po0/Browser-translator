@@ -37,14 +37,23 @@ class ExtensionStoresSmokeTest {
         val prefs = runBlocking { app.settings.values.first() }
         runBlocking { app.settings.update { it.copy(uiLanguage = "en") } }
         try {
-            compose.waitUntil(8_000) { compose.onAllNodesWithContentDescription("Menu").fetchSemanticsNodes().isNotEmpty() }
-            compose.onNodeWithContentDescription("Menu").performClick()
+            compose.waitUntil(8_000) { compose.onAllNodesWithContentDescription("Browser menu").fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithContentDescription("Browser menu").performClick()
             compose.onNodeWithText("Extension stores").performClick()
             awaitText("Add Keiyoushi")
             compose.onNodeWithText("Add Keiyoushi").performClick()
             compose.onNode(hasSetTextAction()).assertTextContains("https://github.com/keiyoushi/extensions/raw/repo/index.pb")
             compose.onNodeWithText("Cancel").performClick()
             compose.onNodeWithText("No stores added yet").assertIsDisplayed()
+            compose.onNodeWithContentDescription("Back").performClick()
+
+            compose.onNode(hasText("Settings") and hasClickAction()).performClick()
+            val extensionSettings = hasText("Extension stores") and hasClickAction()
+            compose.onNodeWithTag("reader-settings-list").performScrollToNode(extensionSettings)
+            compose.onNode(extensionSettings).performClick()
+            awaitText("Add Keiyoushi")
+            compose.onNodeWithContentDescription("Back").performClick()
+            compose.onNodeWithTag("reader-settings-list").assertIsDisplayed()
         } finally { runBlocking { app.settings.update { prefs } } }
     }
 

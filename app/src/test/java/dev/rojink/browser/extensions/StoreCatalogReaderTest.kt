@@ -8,6 +8,7 @@ import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.*
 import org.junit.Test
 import java.io.ByteArrayOutputStream
+import java.io.File
 import java.io.IOException
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.zip.GZIPOutputStream
@@ -104,6 +105,19 @@ class StoreCatalogReaderTest {
         listOf("http://example.com/index.pb", "file:///tmp/index.pb", "javascript:alert(1)", "https://a:b@example.com/index.pb",
             "https://example.com/index.pb#fragment", "https:///example.com/index.pb", "tachiyomi://add-repo?url=$address&url=$address",
             "unknown://add-repo?url=$address", "mihon://extension-store/elsewhere?url=$address").forEach { assertNull(it, parseStoreInput(it)) }
+    }
+
+    @Test fun liveKeiyoushiAudit() = runBlocking {
+        val destination = System.getenv("SIPAN_KEIYOUSHI_AUDIT")
+        org.junit.Assume.assumeTrue("Opt-in live audit only", !destination.isNullOrBlank())
+        val directory = File(checkNotNull(destination))
+        val http = StoreHttp()
+        val catalog = StoreCatalogReader(http).load(KEIYOUSHI_INDEX)
+        assertEquals(KEIYOUSHI_SIGNER, catalog.store.signer)
+        val example = catalog.entries.single { it.packageName == "eu.kanade.tachiyomi.extension.all.mangaplus" }
+        assertEquals(CatalogWarning.SAFE, example.warning)
+        http.apk(checkNotNull(example.apk), File(directory, "sample.apk"))
+        File(directory, "identity.txt").writeText("${example.packageName} ${example.versionCode} ${catalog.store.signer} ${catalog.entries.size}\n")
     }
 
     private data class Redirect(val to: String)
