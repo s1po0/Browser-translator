@@ -58,7 +58,9 @@ class SourceReaderSmokeTest {
             compose.onNodeWithContentDescription("Browser menu").performClick()
             compose.onNodeWithText("Source reader").performClick()
             compose.onNodeWithTag("source-reader").assertIsDisplayed()
-            compose.onNodeWithTag("source-reader-link").performTextReplacement(chapter).performImeAction()
+            val linkField = compose.onNodeWithTag("source-reader-link")
+            linkField.performTextReplacement(chapter)
+            linkField.performImeAction()
             compose.waitUntil(15_000) { browser.selected.address == chapter && browser.selected.progress == 100 && image in served }
             compose.onNodeWithTag("source-reader-translate").assertIsEnabled()
             assertEquals("true", evaluate("""
