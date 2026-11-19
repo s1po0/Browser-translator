@@ -1,6 +1,10 @@
 package dev.rojink.browser.extensions
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
+import kotlinx.coroutines.runBlocking
 import androidx.core.content.pm.PackageInfoCompat
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -45,6 +49,31 @@ class ExtensionApkSmokeTest {
             staged.writeText("This is not an APK")
             assertRejected { verifyExtensionApk(manager, staged, store, entry) }
         } finally { staged.delete() }
+    }
+
+    @Test fun sharedInstalledExtensionsAreReadFromAndroidAndNotDownloadedAgain() = runBlocking {
+        val fixture = InstrumentationRegistry.getInstrumentation().context
+        val target = InstrumentationRegistry.getInstrumentation().targetContext
+        val manager = target.packageManager
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            assertEquals(PackageManager.PERMISSION_GRANTED, target.checkSelfPermission(Manifest.permission.QUERY_ALL_PACKAGES))
+        }
+        val installed = installedExtensions(manager)
+        val stamp = checkNotNull(installed[fixture.packageName])
+        assertEquals("Sipan smoke extension", stamp.name)
+        assertNotNull(stamp.signer)
+        assertFalse("Sipan is not an extension", installed.containsKey(target.packageName))
+        assertTrue(installed.values.all { manager.extensionPackage(it.packageName)?.hasExtensionManifest() == true })
+
+        val store = SavedExtensionStore("https://fixture.example/index.json", "Fixture", checkNotNull(stamp.signer))
+        val entry = CatalogExtension(stamp.name, stamp.packageName, stamp.versionCode, stamp.version, CatalogWarning.SAFE, null, emptyList())
+        fun checkBlocked(problem: StoreProblem, candidate: CatalogExtension, publisher: SavedExtensionStore = store) {
+            assertEquals(problem, assertThrows(StoreException::class.java) { checkExtensionReplacement(manager, publisher, candidate) }.problem)
+        }
+        checkBlocked(StoreProblem.ALREADY_INSTALLED, entry)
+        checkBlocked(StoreProblem.ALREADY_INSTALLED, entry.copy(versionCode = entry.versionCode - 1))
+        checkBlocked(StoreProblem.INSTALLED_CONFLICT, entry, store.copy(signer = "01".repeat(32)))
+        checkExtensionReplacement(manager, store, entry.copy(versionCode = entry.versionCode + 1))
     }
 
     private fun assertRejected(action: () -> Unit) {

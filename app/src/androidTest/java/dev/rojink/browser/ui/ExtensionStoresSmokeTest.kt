@@ -8,6 +8,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import dev.rojink.browser.MainActivity
 import dev.rojink.browser.RojInkApp
 import dev.rojink.browser.data.BrowserSettings
@@ -15,6 +16,8 @@ import dev.rojink.browser.extensions.ExtensionInstaller
 import dev.rojink.browser.extensions.ExtensionStores
 import dev.rojink.browser.extensions.StoreCatalogReader
 import dev.rojink.browser.extensions.StoreHttp
+import dev.rojink.browser.extensions.SavedExtensionStore
+import dev.rojink.browser.extensions.installedExtensions
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -76,7 +79,7 @@ class ExtensionStoresSmokeTest {
             activity.setContent {
                 RojInkTheme(BrowserSettings(uiLanguage = "en")) {
                     Column(Modifier.fillMaxSize().safeDrawingPadding()) {
-                        ExtensionStoresScreen(stores, installer, onBack = {}, onOpenWebsite = {})
+                        ExtensionStoresScreen(stores, installer, onBack = {}, onReadWebsite = {})
                     }
                 }
             }
@@ -93,7 +96,7 @@ class ExtensionStoresSmokeTest {
             compose.onNodeWithText("Add store").performClick()
             awaitText("River Comics")
             compose.onNodeWithText("1 shown · 2 in catalog").assertIsDisplayed()
-            compose.onNodeWithText("Show mixed, adult, and unrated entries").performClick()
+            compose.onNodeWithText("Show mixed, adult, and unrated downloads").performClick()
             compose.onNodeWithText("2 shown · 2 in catalog").assertIsDisplayed()
             compose.onNode(hasSetTextAction()).performTextReplacement("forest en")
             compose.onNodeWithText("1 shown · 2 in catalog").assertIsDisplayed()
@@ -112,6 +115,56 @@ class ExtensionStoresSmokeTest {
         } finally {
             runBlocking { stores.saved.first().filter { it.indexUrl == address }.forEach { stores.remove(it) } }
         }
+    }
+
+    @Test fun sharedApkAppearsOfflineAndAtTheTopOfItsCatalogWithAReaderLink() {
+        val activity = compose.activity
+        val packageName = InstrumentationRegistry.getInstrumentation().context.packageName
+        val fixture = runBlocking { checkNotNull(installedExtensions(activity.packageManager)[packageName]) }
+        val record = SavedExtensionStore("https://device-fixture.example/index.json", "Device fixture store", checkNotNull(fixture.signer))
+        val openedUrl = AtomicReference<String>()
+        val client = OkHttpClient.Builder().addInterceptor { chain ->
+            val body = """{"name":"${record.name}","signingKey":"${record.signer}","extensionList":{"extensions":[
+                {"name":"A available","packageName":"test.extension.available","versionCode":1,"contentWarning":"CONTENT_WARNING_SAFE"},
+                {"name":"Z catalog fixture","packageName":"$packageName","versionCode":${fixture.versionCode},
+                 "contentWarning":"CONTENT_WARNING_MIXED","resources":{"apkUrl":"https://device-fixture.example/extension.apk"},
+                 "sources":[{"name":"Reader fixture","language":"en","homeUrl":"https://read.fixture"}]}]}}"""
+            assertEquals(record.indexUrl, chain.request().url.toString())
+            Response.Builder().request(chain.request()).protocol(Protocol.HTTP_1_1).code(200).message("fixture")
+                .body(body.toResponseBody()).build()
+        }.build()
+        val stores = ExtensionStores(activity, StoreCatalogReader(StoreHttp(client)))
+        val installer = ExtensionInstaller(activity)
+        runBlocking { stores.add(record) }
+        try {
+            compose.runOnUiThread {
+                activity.setContent {
+                    RojInkTheme(BrowserSettings(uiLanguage = "en")) {
+                        Column(Modifier.fillMaxSize().safeDrawingPadding()) {
+                            ExtensionStoresScreen(stores, installer, onBack = {}, onReadWebsite = openedUrl::set)
+                        }
+                    }
+                }
+            }
+            awaitText("Installed on this device")
+            compose.onNodeWithText("Installed on this device").performClick()
+            awaitText("Sipan smoke extension")
+            compose.onNodeWithText(packageName).assertIsDisplayed()
+            compose.onNodeWithContentDescription("Back").performClick()
+            awaitText(record.name)
+            compose.onNodeWithText(record.name).performClick()
+            awaitText("Z catalog fixture")
+            val installedY = compose.onNodeWithText("Z catalog fixture").fetchSemanticsNode().boundsInRoot.top
+            val availableY = compose.onNodeWithText("A available").fetchSemanticsNode().boundsInRoot.top
+            org.junit.Assert.assertTrue(installedY < availableY)
+            compose.onNodeWithText("Installed", substring = false).assertIsDisplayed()
+            compose.onNodeWithText("Z catalog fixture").performClick()
+            compose.onNodeWithText("This version or a newer one is already installed. No download needed.").assertIsDisplayed()
+            compose.onNodeWithText("Verify and install APK").assertDoesNotExist()
+            compose.onNodeWithText("Verify and update APK").assertDoesNotExist()
+            compose.onNodeWithText("Read in Source reader: read.fixture").performClick()
+            assertEquals("https://read.fixture/", openedUrl.get())
+        } finally { runBlocking { stores.remove(record) } }
     }
 
     private fun awaitText(text: String) = compose.waitUntil(8_000) { compose.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty() }

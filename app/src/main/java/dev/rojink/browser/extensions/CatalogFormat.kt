@@ -22,7 +22,7 @@ internal const val KEIYOUSHI_INDEX = "https://github.com/keiyoushi/extensions/ra
 internal const val KEIYOUSHI_SIGNER = "9add655a78e96c4ec7a53ef89dccb557cb5d767489fac5e785d671a5a75d4da2"
 internal const val MAX_STORE_URL = 4096
 
-internal enum class StoreProblem { ADDRESS, FORMAT, SIGNER, DUPLICATE, LIMIT, APK }
+internal enum class StoreProblem { ADDRESS, FORMAT, SIGNER, DUPLICATE, LIMIT, APK, ALREADY_INSTALLED, INSTALLED_CONFLICT }
 internal class StoreException(val problem: StoreProblem, cause: Throwable? = null) : IOException(problem.name, cause)
 
 @Serializable
@@ -43,16 +43,30 @@ internal data class CatalogExtension(
     val languages = sources.map { it.language }.filter(String::isNotEmpty).distinct().sorted()
 }
 
-internal fun List<CatalogExtension>.search(query: String, includeWarnings: Boolean): List<CatalogExtension> {
-    val terms = query.trim().split(Regex("\\s+")).filter(String::isNotEmpty)
-    return filter { entry ->
-        (includeWarnings || entry.warning == CatalogWarning.SAFE) && terms.all { term ->
-            entry.name.contains(term, ignoreCase = true) ||
-                entry.languages.any { it.equals(term, ignoreCase = true) } ||
-                entry.sources.any { it.name.contains(term, ignoreCase = true) }
-        }
-    }
+private val searchWhitespace = Regex("\\s+")
+internal fun extensionSearchTerms(query: String): List<String> = query.trim().split(searchWhitespace).filter(String::isNotEmpty)
+
+private fun CatalogExtension.matches(term: String): Boolean = name.contains(term, ignoreCase = true) ||
+    languages.any { it.equals(term, ignoreCase = true) } || sources.any { it.name.contains(term, ignoreCase = true) }
+
+internal data class CatalogSections(val installed: List<CatalogExtension>, val available: List<CatalogExtension>) {
+    val size get() = installed.size + available.size
 }
+
+internal fun List<CatalogExtension>.sections(
+    query: String, includeWarnings: Boolean, installed: Map<String, InstalledExtension>,
+): CatalogSections {
+    val terms = extensionSearchTerms(query)
+    val (onDevice, inStore) = filter { entry ->
+        val local = installed[entry.packageName]
+        terms.all { term -> entry.matches(term) || local?.matches(term) == true }
+    }.partition { it.packageName in installed }
+    // A warning filter hides new downloads, not information about what is already on the phone.
+    return CatalogSections(onDevice, inStore.filter { includeWarnings || it.warning == CatalogWarning.SAFE })
+}
+
+internal fun List<CatalogExtension>.search(query: String, includeWarnings: Boolean): List<CatalogExtension> =
+    sections(query, includeWarnings, emptyMap()).available
 
 internal fun secureStoreUrl(value: String): HttpUrl? {
     val raw = value.trim()

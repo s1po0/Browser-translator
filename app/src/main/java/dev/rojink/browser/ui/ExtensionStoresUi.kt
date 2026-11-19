@@ -26,37 +26,51 @@ import dev.rojink.browser.extensions.CatalogWarning
 import dev.rojink.browser.extensions.ExtensionCatalog
 import dev.rojink.browser.extensions.ExtensionInstaller
 import dev.rojink.browser.extensions.ExtensionStores
+import dev.rojink.browser.extensions.ExtensionPresence
+import dev.rojink.browser.extensions.InstalledExtension
 import dev.rojink.browser.extensions.KEIYOUSHI_INDEX
 import dev.rojink.browser.extensions.MAX_STORE_URL
 import dev.rojink.browser.extensions.SavedExtensionStore
 import dev.rojink.browser.extensions.StoreException
 import dev.rojink.browser.extensions.StoreProblem
-import dev.rojink.browser.extensions.search
+import dev.rojink.browser.extensions.presence
+import dev.rojink.browser.extensions.sections
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 @Composable internal fun ExtensionStoresScreen(
-    stores: ExtensionStores, installer: ExtensionInstaller, onBack: () -> Unit, onOpenWebsite: (String) -> Unit,
+    stores: ExtensionStores, installer: ExtensionInstaller, onBack: () -> Unit, onReadWebsite: (String) -> Unit,
 ) {
     val stream = remember(stores) { stores.saved.map { Result.success(it) }.catch { emit(Result.failure(it)) } }
     val saved by stream.collectAsState(initial = null)
     var addAddress by rememberSaveable { mutableStateOf<String?>(null) }
     var openStore by remember { mutableStateOf<SavedExtensionStore?>(null) }
     var initialCatalog by remember { mutableStateOf<ExtensionCatalog?>(null) }
+    var showInstalled by rememberSaveable { mutableStateOf(false) }
+    var scanRequest by remember { mutableIntStateOf(0) }
+    val scan = rememberInstalledScan(scanRequest)
     val current = openStore
     fun closeCatalog() { openStore = null; initialCatalog = null }
-    BackHandler(enabled = current != null, onBack = ::closeCatalog)
-    if (current != null) {
+    fun closeInstalled() { showInstalled = false }
+    BackHandler(enabled = current != null || showInstalled) {
+        if (showInstalled) closeInstalled() else closeCatalog()
+    }
+    if (showInstalled) {
+        ScreenHeader(R.string.store_device_installed, ::closeInstalled)
+        InstalledExtensionsPage(scan) { scanRequest++ }
+    } else if (current != null) {
         ScreenHeader(R.string.extensions, ::closeCatalog)
         key(current.indexUrl) {
-            ExtensionCatalogPage(stores, installer, current, initialCatalog, ::closeCatalog, onOpenWebsite)
+            ExtensionCatalogPage(stores, installer, current, initialCatalog, scan?.getOrNull().orEmpty(),
+                onScan = { scanRequest++ }, onRemove = ::closeCatalog, onReadWebsite = onReadWebsite)
         }
     } else {
         ScreenHeader(R.string.extension_stores, onBack)
         val records = saved?.getOrNull().orEmpty()
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            item { InstalledExtensionsShortcut(scan) { showInstalled = true } }
             item {
                 Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = MaterialTheme.shapes.large) {
                     Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -152,7 +166,7 @@ import kotlinx.coroutines.launch
 
 @Composable private fun ExtensionCatalogPage(
     stores: ExtensionStores, installer: ExtensionInstaller, store: SavedExtensionStore, initial: ExtensionCatalog?,
-    onRemove: () -> Unit, onOpenWebsite: (String) -> Unit,
+    installed: Map<String, InstalledExtension>, onScan: () -> Unit, onRemove: () -> Unit, onReadWebsite: (String) -> Unit,
 ) {
     var catalog by remember { mutableStateOf(initial) }
     var request by remember { mutableIntStateOf(0) }
@@ -173,12 +187,14 @@ import kotlinx.coroutines.launch
         }
     }
     val current = catalog
-    val results = remember(current, query, warnings) { current?.entries.orEmpty().search(query, warnings) }
+    val results = remember(current, query, warnings, installed) {
+        current?.entries.orEmpty().sections(query, warnings, installed)
+    }
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         Text(current?.store?.name ?: store.name, style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 12.dp))
         StoreAddress(store.indexUrl, lines = 2)
         Row(verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = { request++ }, enabled = current != null || error != 0) { Text(tr(R.string.store_refresh)) }
+            TextButton(onClick = { request++; onScan() }, enabled = current != null || error != 0) { Text(tr(R.string.store_refresh)) }
             TextButton(onClick = { removeError = false; removing = true }) { Text(tr(R.string.store_remove)) }
         }
         if (current == null) {
@@ -189,16 +205,17 @@ import kotlinx.coroutines.launch
             SettingSwitch(R.string.store_include_warnings, warnings) { warnings = it }
             Text(tr(R.string.store_results, results.size, current.entries.size), style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(vertical = 4.dp))
-            if (results.isEmpty()) StoreStatus(R.string.store_no_matches)
+            if (results.size == 0) StoreStatus(R.string.store_no_matches)
             LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                items(results, key = { it.packageName }) { item ->
-                    OutlinedCard(onClick = { entry = item }, modifier = Modifier.fillMaxWidth()) {
-                        Column(Modifier.padding(horizontal = 14.dp, vertical = 9.dp)) {
-                            Text(item.name, style = MaterialTheme.typography.titleMedium)
-                            Text(listOfNotNull(item.languages.take(6).joinToString(", ").ifBlank { null },
-                                item.version, tr(item.warning.label())).joinToString(" · "), style = MaterialTheme.typography.bodySmall)
-                        }
+                if (results.installed.isNotEmpty()) {
+                    item { StoreStatus(R.string.store_device_installed) }
+                    items(results.installed, key = { it.packageName }) { item ->
+                        CatalogExtensionRow(item, current.store, installed[item.packageName]) { entry = item }
                     }
+                    if (results.available.isNotEmpty()) item { StoreStatus(R.string.store_available) }
+                }
+                items(results.available, key = { it.packageName }) { item ->
+                    CatalogExtensionRow(item, current.store, installed = null) { entry = item }
                 }
             }
         }
@@ -218,13 +235,29 @@ import kotlinx.coroutines.launch
         }) { Text(tr(R.string.remove)) }
     }, dismissButton = { TextButton({ removing = false }) { Text(tr(R.string.cancel)) } })
     if (current != null) entry?.let { item ->
-        ExtensionDetailsDialog(installer, current.store, item, { entry = null }, onOpenWebsite)
+        ExtensionDetailsDialog(installer, current.store, item, installed[item.packageName], { entry = null }, onReadWebsite)
+    }
+}
+
+@Composable private fun CatalogExtensionRow(
+    entry: CatalogExtension, store: SavedExtensionStore, installed: InstalledExtension?, onClick: () -> Unit,
+) {
+    OutlinedCard(onClick, Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(horizontal = 14.dp, vertical = 9.dp)) {
+            Text(entry.name, style = MaterialTheme.typography.titleMedium)
+            if (installed != null) {
+                Text(tr(entry.presence(store.signer, installed).label()), style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary)
+            }
+            Text(listOfNotNull(entry.languages.take(6).joinToString(", ").ifBlank { null }, installed?.version ?: entry.version,
+                tr(entry.warning.label())).joinToString(" · "), style = MaterialTheme.typography.bodySmall)
+        }
     }
 }
 
 @Composable private fun ExtensionDetailsDialog(
-    installer: ExtensionInstaller, store: SavedExtensionStore, entry: CatalogExtension,
-    onDismiss: () -> Unit, onOpenWebsite: (String) -> Unit,
+    installer: ExtensionInstaller, store: SavedExtensionStore, entry: CatalogExtension, installed: InstalledExtension?,
+    onDismiss: () -> Unit, onReadWebsite: (String) -> Unit,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -232,7 +265,9 @@ import kotlinx.coroutines.launch
     var installing by remember { mutableStateOf(false) }
     var permissionPrompt by remember { mutableStateOf(false) }
     val sites = entry.sources.filter { it.website != null }.distinctBy { it.website }
-    if (permissionPrompt) {
+    val presence = entry.presence(store.signer, installed)
+    val canDownload = entry.apk != null && presence.canDownload
+    if (permissionPrompt && canDownload) {
         AlertDialog(onDismissRequest = { permissionPrompt = false }, title = { Text(tr(R.string.store_install_permission)) },
             text = { Text(tr(R.string.store_install_permission_detail)) }, confirmButton = {
                 TextButton(onClick = {
@@ -247,16 +282,21 @@ import kotlinx.coroutines.launch
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             StoreAddress(entry.packageName)
             Text(tr(R.string.store_version_warning, entry.version, tr(entry.warning.label())))
-            if (entry.apk != null) {
-                Text(tr(R.string.store_apk_detail))
-                StoreAddress(entry.apk.host)
-            } else Text(tr(R.string.store_no_apk))
+            if (installed != null) Text(tr(R.string.store_local_version, installed.version))
+            when (presence) {
+                ExtensionPresence.INSTALLED -> Text(tr(R.string.store_already_installed))
+                ExtensionPresence.CONFLICT -> StoreStatus(R.string.store_installed_conflict, error = true)
+                else -> if (entry.apk != null) {
+                    Text(tr(R.string.store_apk_detail))
+                    StoreAddress(entry.apk.host)
+                } else Text(tr(R.string.store_no_apk))
+            }
             if (sites.isNotEmpty()) {
                 HorizontalDivider()
                 Text(tr(R.string.store_website_detail), style = MaterialTheme.typography.bodySmall)
                 sites.forEach { source ->
                     val url = checkNotNull(source.website)
-                    TextButton(onClick = { onDismiss(); onOpenWebsite(url.toString()) }, enabled = !installing) {
+                    TextButton(onClick = { onDismiss(); onReadWebsite(url.toString()) }, enabled = !installing) {
                         Text(tr(R.string.store_open_website, url.host), maxLines = 2, overflow = TextOverflow.Ellipsis)
                     }
                 }
@@ -268,7 +308,7 @@ import kotlinx.coroutines.launch
             if (error != 0) StoreStatus(error, error = true)
         }
     }, confirmButton = {
-        if (entry.apk != null) TextButton(enabled = !installing, onClick = {
+        if (canDownload) TextButton(enabled = !installing, onClick = {
             error = 0
             if (!context.packageManager.canRequestPackageInstalls()) permissionPrompt = true
             else {
@@ -280,7 +320,7 @@ import kotlinx.coroutines.launch
                     finally { installing = false }
                 }
             }
-        }) { Text(tr(R.string.store_verify_install)) }
+        }) { Text(tr(if (presence == ExtensionPresence.UPDATE) R.string.store_verify_update else R.string.store_verify_install)) }
     }, dismissButton = { TextButton(onDismiss) { Text(tr(R.string.cancel)) } })
 }
 
@@ -302,6 +342,13 @@ private fun CatalogWarning.label() = when (this) {
     CatalogWarning.UNSPECIFIED -> R.string.store_unrated
 }
 
+private fun ExtensionPresence.label() = when (this) {
+    ExtensionPresence.INSTALLED -> R.string.store_installed_label
+    ExtensionPresence.UPDATE -> R.string.store_update_available
+    ExtensionPresence.CONFLICT -> R.string.store_conflict_label
+    ExtensionPresence.AVAILABLE -> R.string.store_available
+}
+
 private fun Exception.storeMessage(fallback: Int) = when ((this as? StoreException)?.problem) {
     StoreProblem.ADDRESS -> R.string.store_bad_address
     StoreProblem.FORMAT -> R.string.store_bad_format
@@ -309,5 +356,7 @@ private fun Exception.storeMessage(fallback: Int) = when ((this as? StoreExcepti
     StoreProblem.DUPLICATE -> R.string.store_duplicate
     StoreProblem.LIMIT -> R.string.store_limit
     StoreProblem.APK -> R.string.store_apk_rejected
+    StoreProblem.ALREADY_INSTALLED -> R.string.store_already_installed
+    StoreProblem.INSTALLED_CONFLICT -> R.string.store_installed_conflict
     null -> fallback
 }

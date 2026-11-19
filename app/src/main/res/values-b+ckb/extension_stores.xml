@@ -3,7 +3,7 @@
     <string name="extensions">ئەکستێنشنەکان</string>
     <string name="store_setting_detail">زیادکردنی Keiyoushi یان کاتەلۆگێکی گونجاوی تر</string>
     <string name="store_catalog_intro">ئەکستێنشن لە ستۆرەکانی کۆمەڵگە بدۆزەوە</string>
-    <string name="store_scope">لیستی سەرچاوەکان ببینە و APK بۆ خوێنەرە گونجاوەکانی ئەندرۆید بپشکنە. سیپان ئەکستێنشنەکان جێبەجێ ناکات، بەڵام دەتوانیت ماڵپەڕی سەرچاوەکان لە سیپان بکەیتەوە.</string>
+    <string name="store_scope">لیستی سەرچاوەکان ببینە و APK بۆ خوێنەرە گونجاوەکانی ئەندرۆید بپشکنە. سیپان ئەکستێنشنەکان جێبەجێ ناکات، بەڵام دەتوانیت ماڵپەڕی سەرچاوەکان لە خوێنەری جیاوازی سیپان بکەیتەوە.</string>
     <string name="store_empty">هێشتا هیچ ستۆرێک زیاد نەکراوە</string>
     <string name="store_add_kei">زیادکردنی Keiyoushi</string>
     <string name="store_add">زیادکردنی ستۆرێک</string>
@@ -20,7 +20,7 @@
     <string name="store_remove">لابردنی ستۆر</string>
     <string name="store_remove_detail">ستۆری %1$s لە سیپان لاببرێت؟ هیچ APK ـیەک لە ئەندرۆید ناسڕێتەوە.</string>
     <string name="store_search">گەڕان بە ناوی ئەکستێنشن، سەرچاوە یان کۆدی زمان</string>
-    <string name="store_include_warnings">پیشاندانی ناوەڕۆکی تێکەڵ، گەورەسالان و بێ پۆلێن</string>
+    <string name="store_include_warnings">پیشاندانی دابەزاندنی ناوەڕۆکی تێکەڵ، گەورەسالان و بێ پۆلێن</string>
     <string name="store_results">%1$d پیشان دەدرێت · %2$d لە کاتەلۆگدا</string>
     <string name="store_no_matches">هیچ ئەکستێنشنێک نەدۆزرایەوە. وشەیەکی تر یان فلتەرێکی تر تاقی بکەوە.</string>
     <string name="store_safe">بێ ئاگادارکردنەوە</string>
@@ -30,8 +30,8 @@
     <string name="store_version_warning">وەشانی %1$s · %2$s</string>
     <string name="store_apk_detail">ئەم APK ـە بۆ خوێنەرێکی گونجاو دابمەزرێنە. ئەندرۆید داوای پشتڕاستکردنەوە دەکات. سیپان جێبەجێی ناکات.</string>
     <string name="store_no_apk">ئەم ئەکستێنشنە لینکی HTTPS ـی دروستی APK ـی نییە.</string>
-    <string name="store_website_detail">بێ دامەزراندنی ئەکستێنشنەکە، ماڵپەڕەکە لە سیپان بکەوە بۆ گەڕان یان وەرگێڕان.</string>
-    <string name="store_open_website">کردنەوەی ماڵپەڕ: %1$s</string>
+    <string name="store_website_detail">سایتەکە لە خوێنەری جیاوازی سیپان بە گرتنی ڕیکلام بکەوە. بۆ خوێندنەوەی سایتەکە پێویست بە APK نییە.</string>
+    <string name="store_open_website">خوێندنەوە لە خوێنەری سەرچاوەکان: %1$s</string>
     <string name="store_verify_install">پشکنین و دامەزراندنی APK</string>
     <string name="store_verifying">APK دادەبەزێت و دەپشکنرێت…</string>
     <string name="store_install_permission">ڕێگە بە دامەزراندن لە سیپان بدەیت؟</string>
@@ -45,4 +45,27 @@
     <string name="store_storage_failed">سیپان نەیتوانی ستۆرەکان بخوێنێتەوە یان هەڵیان بگرێت.</string>
     <string name="store_install_failed">APK دانەبەزی یان دامەزرێنەری ئەندرۆید نەکرایەوە.</string>
     <string name="store_apk_rejected">APK ڕەت کرایەوە: پاکێج، وەشان، زانیاریی ئەکستێنشن، قەبارە یان واژوو پشکنینەکەی تێنەپەڕاند.</string>
+    <string name="store_device_installed">دامەزراوەکانی ئەم ئامێرە</string>
+    <string name="store_device_count">%1$d ئەکستێنشن لەم پرۆفایلەی ئەندرۆیددا</string>
+    <string name="store_device_scope">پشکنینەکە لەسەر ئامێرەکەتە. تەنها APK ـە هاوبەشەکانی ئەم پرۆفایلەی ئەندرۆید پیشان دەدرێن. بۆ لینکی سایت، ئەکستێنشنەکە لە کاتەلۆگ بکەوە.</string>
+    <string name="store_device_scanning">پشکنینی ئامێرەکە…</string>
+    <string name="store_device_failed">دامەزراوەکان نەخوێندرانەوە. دووبارە پشکنین بکە.</string>
+    <string name="store_device_rescan">پشکنینەوە</string>
+    <string name="store_device_search">گەڕان لە دامەزراوەکان</string>
+    <string name="store_device_none">هیچ ئەکستێنشنێکی هاوبەش لەم پرۆفایلەی ئەندرۆید نەدۆزرایەوە.</string>
+    <string name="store_local_version">وەشانی دامەزراو: %1$s</string>
+    <string name="store_installed_label">دامەزراوە</string>
+    <string name="store_update_available">نوێکردنەوە بەردەستە</string>
+    <string name="store_conflict_label">دامەزراوە · واژوو جیاوازە</string>
+    <string name="store_installed_conflict">APK ـێک بە هەمان ناوی پاکێج دامەزراوە، بەڵام لەگەڵ واژوو یان جۆری ئەکستێنشنەکەی کاتەلۆگ ناگونجێت. سیپان جێگۆڕکێی پێ ناکات.</string>
+    <string name="store_already_installed">ئەم وەشانە یان وەشانێکی نوێتر دامەزراوە. پێویست بە دابەزاندن نییە.</string>
+    <string name="store_available">بەردەست لە کاتەلۆگ</string>
+    <string name="store_verify_update">پشکنین و نوێکردنەوەی APK</string>
+    <string name="source_reader">خوێنەری سەرچاوەکان</string>
+    <string name="source_reader_close">داخستنی خوێنەری سەرچاوەکان</string>
+    <string name="source_reader_intro">سایتێکی سەرچاوە یان لینکی چەپتەر لە خوێنەرێکی جیا بکەوە. ڕیکلامە ناسراوەکان و پۆپ‌ئەپ دەگرێت، بەڵام هەندێک ڕیکلام دەکرێت هەر لە ناو پەڕەکە بمێنێتەوە.</string>
+    <string name="source_reader_filter">گرتنی ڕیکلام و پۆپ‌ئەپ چالاکە</string>
+    <string name="source_reader_blocked">لینکی ڕیکلام لە خوێنەری سەرچاوەکان گیرا.</string>
+    <string name="source_reader_link">لینکی سەرچاوە یان چەپتەر</string>
+    <string name="source_reader_change_link">کردنەوەی لینکێکی تر</string>
 </resources>

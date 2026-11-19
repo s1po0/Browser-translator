@@ -17,8 +17,6 @@ import java.util.UUID
 import java.util.concurrent.TimeUnit
 
 private const val EXTENSION_CACHE = "extension-installs"
-private const val EXTENSION_FEATURE = "tachiyomi.extension"
-private const val SOURCE_METADATA = "tachiyomi.extension.class"
 private const val APK_MIME_TYPE = "application/vnd.android.package-archive"
 
 internal class ExtensionInstaller(context: Context, private val http: StoreHttp = StoreHttp()) {
@@ -26,6 +24,8 @@ internal class ExtensionInstaller(context: Context, private val http: StoreHttp 
 
     suspend fun handOff(context: Context, store: SavedExtensionStore, entry: CatalogExtension) {
         val url = entry.apk ?: throw StoreException(StoreProblem.APK)
+        // The device list can have changed in another reader since the catalog was opened.
+        withContext(Dispatchers.IO) { checkExtensionReplacement(context.packageManager, store, entry) }
         val file = File(directory, "${UUID.randomUUID()}.apk")
         var handedOff = false
         try {
@@ -64,13 +64,9 @@ internal fun PackageInfo.currentSignerSha256(): String? {
 }
 
 internal fun verifyExtensionApk(manager: PackageManager, apk: File, store: SavedExtensionStore, entry: CatalogExtension) {
-    val flags = extensionSigningFlags() or PackageManager.GET_CONFIGURATIONS or PackageManager.GET_META_DATA
-    @Suppress("DEPRECATION")
-    val parsed = manager.getPackageArchiveInfo(apk.absolutePath, flags) ?: throw StoreException(StoreProblem.APK)
+    val parsed = manager.getPackageArchiveInfo(apk.absolutePath, extensionPackageFlags()) ?: throw StoreException(StoreProblem.APK)
     if (parsed.packageName != entry.packageName || PackageInfoCompat.getLongVersionCode(parsed) != entry.versionCode ||
-        parsed.reqFeatures.orEmpty().none { it.name == EXTENSION_FEATURE } ||
-        parsed.applicationInfo?.metaData?.getString(SOURCE_METADATA).isNullOrBlank() ||
-        parsed.currentSignerSha256() != store.signer) {
+        !parsed.hasExtensionManifest() || parsed.currentSignerSha256() != store.signer) {
         throw StoreException(StoreProblem.APK)
     }
 }

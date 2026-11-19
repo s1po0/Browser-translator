@@ -72,7 +72,7 @@ import kotlinx.coroutines.delay
 private enum class Screen(val title: Int) {
     Browser(R.string.app_name), Search(R.string.sipan_search), Tabs(R.string.tabs), Bookmarks(R.string.bookmarks), History(R.string.history),
     Downloads(R.string.downloads), Settings(R.string.settings), Privacy(R.string.privacy), About(R.string.about),
-    ExtensionStores(R.string.extension_stores),
+    ExtensionStores(R.string.extension_stores), SourceReader(R.string.source_reader),
 }
 
 @Composable fun BrowserUi(
@@ -87,6 +87,7 @@ private enum class Screen(val title: Int) {
 ) {
     var screen by remember { mutableStateOf(Screen.Browser) }
     var storesBack by remember { mutableStateOf(Screen.Browser) }
+    var readerBack by remember { mutableStateOf(Screen.Browser) }
     val bookmarksFlow = remember(browser) { browser.dao.bookmarks() }
     val bookmarks by bookmarksFlow.collectAsState(emptyList())
     val snackbar = remember { SnackbarHostState() }
@@ -130,8 +131,16 @@ private enum class Screen(val title: Int) {
         hideKeyboard()
         showSearchFilters = true
     }
+    fun openReader(url: String? = null) {
+        if (browser.openSourceReader(url)) {
+            readerBack = screen
+            hideKeyboard()
+            screen = Screen.SourceReader
+        }
+    }
     fun open(target: Screen) {
-        if (target == Screen.Search) showSearch(webSearch ?: WebSearchRequest(""), onDevice = tab.incognito)
+        if (target == Screen.SourceReader) openReader()
+        else if (target == Screen.Search) showSearch(webSearch ?: WebSearchRequest(""), onDevice = tab.incognito)
         else {
             browser.cancelPendingSearch()
             if (target == Screen.ExtensionStores) storesBack = screen
@@ -157,14 +166,20 @@ private enum class Screen(val title: Int) {
         screen = when (screen) {
             Screen.About, Screen.Privacy -> Screen.Settings
             Screen.ExtensionStores -> storesBack
+            Screen.SourceReader -> { browser.closeSourceReader(); readerBack }
             else -> Screen.Browser
         }
     }
     BackHandler(enabled = video != null || screen != Screen.Browser || tab.find || tab.canBack) {
-        if (video != null) browser.closeVideo() else if (screen != Screen.Browser) finishScreen() else browser.back()
+        when {
+            video != null -> browser.closeVideo()
+            screen == Screen.SourceReader -> if (!browser.back()) finishScreen()
+            screen != Screen.Browser -> finishScreen()
+            else -> browser.back()
+        }
     }
     DisposableEffect(screen, video) {
-        browser.setAttached(screen == Screen.Browser && video == null)
+        browser.setAttached((screen == Screen.Browser || screen == Screen.SourceReader) && video == null)
         onDispose { browser.setAttached(false) }
     }
     if (video != null) {
@@ -273,7 +288,7 @@ private enum class Screen(val title: Int) {
             }
         } else {
             Column(Modifier.fillMaxSize().padding(inset).consumeWindowInsets(inset).imePadding()) {
-                if (screen != Screen.ExtensionStores) ScreenHeader(screen.title, ::finishScreen)
+                if (screen != Screen.ExtensionStores && screen != Screen.SourceReader) ScreenHeader(screen.title, ::finishScreen)
                 when (screen) {
                     Screen.Search -> key(tab.id) {
                         SipanSearchScreen(browser.dao, searchLaunch, tab.incognito, webFilters, ::configureSearch,
@@ -290,7 +305,8 @@ private enum class Screen(val title: Int) {
                     Screen.Downloads -> DownloadScreen(browser)
                     Screen.Settings -> SettingsScreen(browser, app, settings, bookmarks, clearTranslations,
                         { screen = Screen.Privacy }, { screen = Screen.About }, { open(Screen.ExtensionStores) })
-                    Screen.ExtensionStores -> ExtensionStoresScreen(app.extensionStores, app.extensionInstaller, ::finishScreen, ::navigate)
+                    Screen.ExtensionStores -> ExtensionStoresScreen(app.extensionStores, app.extensionInstaller, ::finishScreen, ::openReader)
+                    Screen.SourceReader -> SourceReaderPage(browser, ::finishScreen, onTranslate, translationActive, translationBar)
                     Screen.Privacy -> InfoScreen(R.string.privacy_intro, R.string.privacy_body)
                     Screen.About -> InfoScreen(R.string.app_name, R.string.about_body)
                     else -> Unit
@@ -330,6 +346,7 @@ private enum class Screen(val title: Int) {
             item(R.string.history) { open(Screen.History) }
             item(R.string.downloads) { open(Screen.Downloads) }
             item(R.string.extension_stores) { open(Screen.ExtensionStores) }
+            item(R.string.source_reader) { open(Screen.SourceReader) }
             if (onPhoto != null) item(R.string.photo, action = onPhoto)
             item(R.string.settings) { open(Screen.Settings) }
         }

@@ -61,7 +61,8 @@ import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.resume
 import kotlin.math.abs
 
-class BrowserTab(val incognito: Boolean) {
+class BrowserTab(val incognito: Boolean, internal val sourceParent: String? = null) {
+    internal val sourceReader get() = sourceParent != null
     val id = UUID.randomUUID().toString()
     val profile = if (incognito) "rojink_tmp_$id" else null
     var address by mutableStateOf("")
@@ -131,6 +132,7 @@ class Browser(
     private var attached = true
     @Volatile private var filterTrackers = true
     @Volatile var features: DocumentFeatures = object : DocumentFeatures {}
+    private val sourceReaderScript by lazy { context.assets.open("source-reader.js").bufferedReader().use { it.readText() } }
     private var blockCounterUpdateScheduled = false
     private val searchCookieLock = Mutex()
     private var searchAttempt = 0L
@@ -167,13 +169,31 @@ class Browser(
         features.foreground(selected, visible && attached)
     }
 
-    fun newTab(privateTab: Boolean = false): Boolean {
-        if (privateTab && !supportsPrivate) { notice = R.string.private_unsupported; return false }
+    fun newTab(privateTab: Boolean = false): Boolean = addTab(BrowserTab(privateTab))
+
+    private fun addTab(tab: BrowserTab): Boolean {
+        if (tab.incognito && !supportsPrivate) { notice = R.string.private_unsupported; return false }
         if (tabs.size >= 12) { notice = R.string.tab_limit; return false }
-        val tab = BrowserTab(privateTab)
         tabs.add(tab)
         select(tab)
         return true
+    }
+
+    /** A separate WebView, preserving the tab the reader was opened from and its privacy mode. */
+    internal fun openSourceReader(address: String?): Boolean {
+        if (!addTab(BrowserTab(selected.incognito, sourceParent = selected.id))) return false
+        if (address != null && !navigate(address)) {
+            closeSourceReader()
+            return false
+        }
+        return true
+    }
+
+    internal fun closeSourceReader() {
+        val reader = selected
+        val parent = reader.sourceParent ?: return
+        tabs.firstOrNull { it.id == parent }?.let(::select)
+        close(reader)
     }
 
     fun select(tab: BrowserTab) {
@@ -202,6 +222,10 @@ class Browser(
     fun navigate(input: String): Boolean {
         val address = resolveLink(input) ?: return false.also { notice = R.string.address_error }
         val tab = selected
+        if (tab.sourceReader && webUrl(address)?.host?.let(::isSourceAdHost) == true) {
+            notice = R.string.source_reader_blocked
+            return false
+        }
         val view = ensureView(tab) ?: return false
         loadAddress(tab, view, address)
         return true
@@ -472,6 +496,8 @@ class Browser(
                 allowFileAccess = false
                 allowContentAccess = false
                 javaScriptCanOpenWindowsAutomatically = false
+                // Requests for secondary windows reach Chrome.onCreateWindow, which refuses them.
+                if (tab.sourceReader) setSupportMultipleWindows(true)
                 mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
                 mediaPlaybackRequiresUserGesture = true
                 setSupportZoom(true)
@@ -485,6 +511,9 @@ class Browser(
             configureDisplay(tab, web)
             if (WebViewFeature.isFeatureSupported(WebViewFeature.ALGORITHMIC_DARKENING)) {
                 WebSettingsCompat.setAlgorithmicDarkeningAllowed(web.settings, true)
+            }
+            if (tab.sourceReader && WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+                WebViewCompat.addDocumentStartJavaScript(web, sourceReaderScript, setOf("*"))
             }
             web.webViewClient = Navigation(tab)
             web.webChromeClient = Chrome(tab)
@@ -546,6 +575,10 @@ class Browser(
             val target = request.url.toString()
             val address = webUrl(target)
             if (address != null) {
+                if (tab.sourceReader && isSourceAdHost(address.host)) {
+                    noteBlocked(tab, view)
+                    return true
+                }
                 if (request.isForMainFrame && tab === selected && tab.directImagePage == tab.address &&
                     address.isHttps && address.host == "imgs.search.brave.com" && address.port == 443) {
                     // Let Sipan own the image navigation so the results stay in its Back stack.
@@ -593,6 +626,7 @@ class Browser(
             tab.canBack = view.canGoBack()
             tab.canForward = view.canGoForward()
             tab.progress = 100
+            if (tab.sourceReader && !tab.failed) view.evaluateJavascript(sourceReaderScript, null)
             if (tab.incognito || tab.failed) return
             val current = webUrl(url)?.toString() ?: return
             // Keep results in the tab's back stack, but not the persistent history/search library.
@@ -622,22 +656,31 @@ class Browser(
         }
 
         override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
+            val host = request.url.host
+            // Do this ahead of the document features in reader tabs; ordinary browsing keeps its setting.
+            if (tab.sourceReader && host?.let(::isSourceAdHost) == true) return blockedResponse(tab, view)
             features.intercept(tab, request)?.let { return it }
-            if (!request.isForMainFrame && filterTrackers && request.url.host?.let(::isTracker) == true) {
-                tab.blockedCount.incrementAndGet()
-                view.post {
-                    if (!blockCounterUpdateScheduled && !tab.destroyed) {
-                        blockCounterUpdateScheduled = true
-                        scope.launch {
-                            delay(250)
-                            tabs.forEach { it.blocked = it.blockedCount.get() }
-                            blockCounterUpdateScheduled = false
-                        }
-                    }
-                }
-                return WebResourceResponse("text/plain", "utf-8", ByteArrayInputStream(byteArrayOf()))
-            }
+            if (!request.isForMainFrame && filterTrackers && host?.let(::isTracker) == true) return blockedResponse(tab, view)
             return null
+        }
+    }
+
+    private fun blockedResponse(tab: BrowserTab, view: WebView): WebResourceResponse {
+        noteBlocked(tab, view)
+        return WebResourceResponse("text/plain", "utf-8", ByteArrayInputStream(byteArrayOf()))
+    }
+
+    private fun noteBlocked(tab: BrowserTab, view: WebView) {
+        tab.blockedCount.incrementAndGet()
+        view.post {
+            if (!blockCounterUpdateScheduled && !tab.destroyed) {
+                blockCounterUpdateScheduled = true
+                scope.launch {
+                    delay(250)
+                    tabs.forEach { it.blocked = it.blockedCount.get() }
+                    blockCounterUpdateScheduled = false
+                }
+            }
         }
     }
 

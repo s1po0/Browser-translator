@@ -3,7 +3,7 @@
     <string name="extensions">Extensions</string>
     <string name="store_setting_detail">Add Keiyoushi or another compatible catalog</string>
     <string name="store_catalog_intro">Find extensions in community stores</string>
-    <string name="store_scope">Browse source catalogs and verify APKs for compatible Android readers. Sipan does not run these extensions. You can open listed source websites in Sipan.</string>
+    <string name="store_scope">Browse source catalogs and verify APKs for compatible Android readers. Sipan does not run these extensions. You can open listed websites in Sipan’s separate Source reader.</string>
     <string name="store_empty">No stores added yet</string>
     <string name="store_add_kei">Add Keiyoushi</string>
     <string name="store_add">Add a store</string>
@@ -20,7 +20,7 @@
     <string name="store_remove">Remove store</string>
     <string name="store_remove_detail">Remove %1$s from Sipan? This does not uninstall any APKs.</string>
     <string name="store_search">Find an extension, source, or language code</string>
-    <string name="store_include_warnings">Show mixed, adult, and unrated entries</string>
+    <string name="store_include_warnings">Show mixed, adult, and unrated downloads</string>
     <string name="store_results">%1$d shown · %2$d in catalog</string>
     <string name="store_no_matches">No matching extensions. Try a different search or filter.</string>
     <string name="store_safe">No warning</string>
@@ -30,8 +30,8 @@
     <string name="store_version_warning">Version %1$s · %2$s</string>
     <string name="store_apk_detail">Install this APK for a compatible reader. Android will ask you to confirm. Sipan will not run it.</string>
     <string name="store_no_apk">This entry has no valid HTTPS APK link.</string>
-    <string name="store_website_detail">Open the website in Sipan to browse or translate it, without installing the extension.</string>
-    <string name="store_open_website">Open website: %1$s</string>
+    <string name="store_website_detail">Open the source website in Sipan’s separate reader with ad blocking. No APK is needed to read the website.</string>
+    <string name="store_open_website">Read in Source reader: %1$s</string>
     <string name="store_verify_install">Verify and install APK</string>
     <string name="store_verifying">Downloading and checking the APK…</string>
     <string name="store_install_permission">Allow installs from Sipan?</string>
@@ -45,4 +45,27 @@
     <string name="store_storage_failed">Sipan could not read or save your stores.</string>
     <string name="store_install_failed">Could not download the APK or open the Android installer.</string>
     <string name="store_apk_rejected">APK blocked: the package, version, extension metadata, size, or signature failed verification.</string>
+    <string name="store_device_installed">Installed on this device</string>
+    <string name="store_device_count">%1$d extension APKs on this Android profile</string>
+    <string name="store_device_scope">This check stays on your device. Only APKs shared with this Android profile are shown. For website links, open the matching catalog entry.</string>
+    <string name="store_device_scanning">Checking this device…</string>
+    <string name="store_device_failed">Could not read installed extensions. Try scanning again.</string>
+    <string name="store_device_rescan">Scan again</string>
+    <string name="store_device_search">Find an installed extension</string>
+    <string name="store_device_none">No shared extension APKs found in this Android profile.</string>
+    <string name="store_local_version">Installed version: %1$s</string>
+    <string name="store_installed_label">Installed</string>
+    <string name="store_update_available">Update available</string>
+    <string name="store_conflict_label">Installed · different signer</string>
+    <string name="store_installed_conflict">An APK with this package name is installed and does not match this catalog’s signer or extension type. Sipan will not replace it.</string>
+    <string name="store_already_installed">This version or a newer one is already installed. No download needed.</string>
+    <string name="store_available">Available in catalog</string>
+    <string name="store_verify_update">Verify and update APK</string>
+    <string name="source_reader">Source reader</string>
+    <string name="source_reader_close">Close source reader</string>
+    <string name="source_reader_intro">Open a source website or a chapter link in a separate reader. It blocks known ads and pop-ups, but some ads may still be part of the page.</string>
+    <string name="source_reader_filter">Ad and pop-up blocking on</string>
+    <string name="source_reader_blocked">Ad link blocked in Source reader.</string>
+    <string name="source_reader_link">Source or chapter link</string>
+    <string name="source_reader_change_link">Open a different link</string>
 </resources>
