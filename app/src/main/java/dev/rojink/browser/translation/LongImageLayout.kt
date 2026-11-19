@@ -4,7 +4,7 @@ import kotlin.math.abs
 import kotlin.math.floor
 import kotlin.math.sqrt
 
-internal const val IMAGE_MAX_PIXELS = 16_000_000L
+internal const val IMAGE_MAX_PIXELS = 4_100_000L
 internal const val IMAGE_MAX_EDGE = 8200
 private const val LONG_MAX_SCAN_PIXELS = 34_000_000L
 private const val LONG_MAX_SCAN_HEIGHT = 30_000
