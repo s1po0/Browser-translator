@@ -55,17 +55,54 @@ private fun shortSoraniLine(text: String): String? {
     }
 }
 
+private val letterRank = Regex("""(?<![\p{L}\p{Nd}_-])([A-FS])[-\u2010\u2011\u2013](?i:rank)(?![\p{L}\p{Nd}_-])""")
+private val gradeCode = Regex("""(?<![\p{L}\p{Nd}_])[A-FS](?![\p{L}\p{Nd}_])""")
+private val rankWord = Regex("\\brank\\b", RegexOption.IGNORE_CASE)
+private val apostrophe = Regex("""(?<=\p{L})[‘’](?=\p{L})""")
+private val retryWord = Regex("""\p{L}+(?:'\p{L}+)*""")
+
+/** Let MT see ordinary English rather than comic lettering. Leave spelling, boundaries and literals intact. */
+private fun soraniRetryInput(text: String): String {
+    if (!asciiLettering(text) || imageLiteralSpans(text).isNotEmpty()) return text
+    val plain = apostrophe.replace(text, "'")
+    val recased = if (plain.none(Char::isLowerCase) && retryWord.findAll(plain).take(2).count() == 2) {
+        val ranks = letterRank.findAll(plain).map { it.range.first }.toSet()
+        var previousEnd = 0
+        retryWord.replace(plain) { match ->
+            val word = match.value
+            val lower = word.lowercase(Locale.ROOT)
+            val startsSentence = previousEnd == 0 || (previousEnd until match.range.first).any { plain[it] in ".!?" }
+            previousEnd = match.range.last + 1
+            when {
+                match.range.first in ranks || word.length == 1 && word != "A" || isKnownAcronym(lower) -> word
+                startsSentence || lower.startsWith("i'") -> lower.replaceFirstChar(Char::uppercaseChar)
+                else -> lower
+            }
+        }
+    } else plain
+    // The hyphenated modifier can be copied verbatim or misread as “electronic rank”. Keep the actual grade.
+    return letterRank.replace(recased) { "${it.groupValues[1]} rank" }
+}
+
 internal fun validImageTranslation(before: String, after: String, source: String, target: String): Boolean {
-    if (after.isBlank() || before.trim().equals(after.trim(), ignoreCase = true)) return false
+    if (after.isBlank() || before.trim().equals(after.trim(), ignoreCase = true) || isProtectedImageLiteral(before)) return false
     val literals = imageLiteralSpans(before).groupingBy { it }.eachCount()
     if (literals.isNotEmpty()) {
         val preserved = imageLiteralSpans(after).groupingBy { it }.eachCount()
         if (literals.any { (span, count) -> (preserved[span] ?: 0) < count }) return false
     }
-    return target != "ckb" || source != "en" && !englishProse(before) || !incompleteSorani(before, after, source == "en")
+    if (target != "ckb") return true
+    val grades = if (literals.isEmpty() && asciiLettering(before)) letterRank.findAll(before).map { it.groupValues[1] }.toSet() else emptySet()
+    if (grades.isNotEmpty()) {
+        val visible = imageLiteralSpans(after).fold(after) { text, literal -> text.replace(literal, " ") }
+        val kept = gradeCode.findAll(visible).map { it.value }.toSet()
+        if (!kept.containsAll(grades) || rankWord.containsMatchIn(visible)) return false
+    }
+    // Run even in Auto: a Latin copy with only changed punctuation is not a translation.
+    return !incompleteSorani(before, after, source == "en" || grades.isNotEmpty())
 }
 
-/** Keep whole dialogue together, then bypass batch markers and stale cache for suspect bubbles. */
+/** Keep whole dialogue together, then retry rejected bubbles without batch markers or stale cache. */
 internal suspend fun translateImageWords(
     units: List<TextUnit>, target: String, script: String,
     provider: TranslationProvider, retryProvider: TranslationProvider,
@@ -75,7 +112,7 @@ internal suspend fun translateImageWords(
     val result = input.toMutableList()
     val retry = linkedMapOf<Pair<String, String>, MutableList<Int>>()
     fun polish(text: String) = if (target == "ckb") polishSorani(text) else text
-    for ((source, indices) in input.indices.groupBy { idx ->
+    for ((source, indices) in input.indices.filterNot { isProtectedImageLiteral(input[it]) }.groupBy { idx ->
         when {
             script == ENGLISH_IMAGE_LANGUAGE -> ENGLISH_IMAGE_LANGUAGE
             script == ENGLISH_COMIC_SCRIPT && !units[idx].vertical && englishLettering(input[idx]) -> ENGLISH_IMAGE_LANGUAGE
@@ -93,7 +130,8 @@ internal suspend fun translateImageWords(
             val checkSource = if (knownEnglish) "en" else source
             if (validImageTranslation(before, after, checkSource, target)) {
                 result[index] = polish(after)
-            } else if (target == "ckb" && (knownEnglish || englishProse(before))) {
+            } else if (target == "ckb" && (knownEnglish || englishProse(before) ||
+                    !units[index].vertical && asciiLettering(before) && letterRank.containsMatchIn(before))) {
                 val local = if (knownEnglish) shortSoraniLine(before) else null
                 if (local != null) result[index] = local else {
                     val key = checkSource to before
@@ -111,9 +149,11 @@ internal suspend fun translateImageWords(
             retry.keys.take(8).forEach { key -> launch {
                 parallel.withPermit {
                     val (source, before) = key
-                    val value = try { retryProvider.translate(listOf(before), source, target).singleOrNull() }
+                    val query = soraniRetryInput(before)
+                    val value = try { retryProvider.translate(listOf(query), source, target).singleOrNull() }
                     catch (e: CancellationException) { throw e }
                     catch (_: IOException) { null }
+                    // Check against the unchanged OCR text, never the reformatted input sent to MT.
                     if (value != null && validImageTranslation(before, value, source, target)) fixes[key] = polish(value)
                 }
             } }

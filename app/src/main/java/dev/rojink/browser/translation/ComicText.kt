@@ -165,7 +165,7 @@ internal fun comicNeighbors(a: OcrLine, b: OcrLine, enclosed: Boolean = false, w
 internal fun incompleteSorani(source: String, output: String, knownEnglish: Boolean): Boolean {
     if (output.isBlank()) return true
     val sequence = alphaText(source)
-    if (sequence.length >= 2 && sequence == alphaText(output) && asciiLettering(source)) return true
+    if (sequence == alphaText(output) && englishLettering(source)) return true
     if (!knownEnglish && !englishProse(source)) return false
     val withoutLiterals = imageLiteralSpans(output).fold(output) { text, span -> text.replace(span, " ") }
     if (withoutLiterals.none { it in '\u0600'..'\u08ff' && it.isLetter() }) return true

@@ -95,12 +95,64 @@ class ComicOcrTest {
     @Test fun `Sorani fallback retries the whole unit and leaves bad results in the original pixels`() = runBlocking {
         val dialogue = "MY AIM WAS OFF, AND I LOST FOCUS AFTER I TOOK A LONG BREAK."
         val inputs = listOf(dialogue, "YOU", "Open https://example.com now")
+        val recased = "My aim was off, and I lost focus after I took a long break."
         val mock = RecordingTranslator { texts -> texts.map { if (it == dialogue) "MY کە تێکچوو" else it } }
-        val retry = RecordingTranslator { texts -> texts.map { if (it == dialogue) "ئامانجم تێکچوو و سەرنجم لەدەست دا." else if (it == "YOU") "تۆ" else "لینکەکە بکەرەوە" } }
+        val retry = RecordingTranslator { texts -> texts.map { if (it == recased) "ئامانجم تێکچوو و سەرنجم لەدەست دا." else "لینکەکە بکەرەوە" } }
         val translated = translateImageWords(inputs.map(::unit), "ckb", ENGLISH_COMIC_SCRIPT, mock, retry)
         assertEquals(listOf(Call(inputs, "en", "ckb")), mock.calls)
-        assertEquals(inputs.filterNot { it == "YOU" }.map { Call(listOf(it), "en", "ckb") }, retry.calls)
+        assertEquals(listOf(recased, inputs.last()).map { Call(listOf(it), "en", "ckb") }, retry.calls)
         assertEquals(listOf("ئامانجم تێکچوو و سەرنجم لەدەست دا.", "تۆ", inputs.last()), translated)
+    }
+
+    @Test fun `retries copied comic fragments using live-observed alternatives without mixing balloons`() = runBlocking {
+        val rank = "E-RANK HUNTER,"
+        val guild = "THE HUNTER GUILD’S"
+        val inputs = listOf(rank, "KEEP MOVING.", guild, rank)
+        val moving = "بەردەوام بە لە ڕۆیشتن."
+        // Recorded GTX behavior on the two screenshot fragments, not a live network test.
+        val recovery = mapOf("E rank hunter," to "ڕاوچی پلەی E،", "The hunter guild's" to "سەندیکای ڕاوچییەکان")
+        for ((mode, source) in listOf(ENGLISH_COMIC_SCRIPT to "en", ENGLISH_IMAGE_LANGUAGE to "en", "auto" to "auto")) {
+            val provider = RecordingTranslator { listOf("E-RANK HUNTER،", moving, guild, "E-RANK HUNTER،") }
+            val retry = RecordingTranslator { texts -> texts.map { recovery.getValue(it) } }
+            val output = translateImageWords(inputs.map(::unit), "ckb", mode, provider, retry)
+            assertEquals(listOf(Call(inputs, source, "ckb")), provider.calls)
+            assertEquals(recovery.keys.map { Call(listOf(it), source, "ckb") }, retry.calls)
+            assertEquals(listOf(recovery.values.first(), moving, recovery.values.last(), recovery.values.first()), output)
+        }
+    }
+
+    @Test fun `rank stays the same and mixed English rank text cannot be painted`() {
+        val rank = "E-RANK HUNTER,"
+        for (source in listOf("auto", "en")) {
+            assertFalse(validImageTranslation(rank, "E-RANK HUNTER،", source, "ckb"))
+            assertFalse(validImageTranslation(rank, "ڕاوچییەکی E-rank،", source, "ckb"))
+            assertFalse(validImageTranslation(rank, "ڕاوچی پلەی ئەلیکترۆنی،", source, "ckb"))
+            assertFalse(validImageTranslation(rank, "ڕاوچی پلەی S،", source, "ckb"))
+            assertTrue(validImageTranslation(rank, "ڕاوچی پلەی E،", source, "ckb"))
+        }
+        assertFalse(validImageTranslation("HUNTER,", "HUNTER،", "auto", "ckb"))
+        assertTrue(validImageTranslation(rank, "Chasseur de rang E,", "en", "fr"))
+    }
+
+    @Test fun `retry keeps protected labels and good neighbors while a bad result stays original`() = runBlocking {
+        val rank = "S‑RANK MONSTER!"
+        val acronyms = "I FOUND THE API."
+        val literal = "OPEN HTTPS:/EXAMPLE.COM AND SAVE ID42 FOR $7.25."
+        val labels = listOf("$7.25", "https:/example.com", "ID42")
+        val inputs = listOf(rank, acronyms, literal) + labels
+        val provider = RecordingTranslator { it }
+        val retry = RecordingTranslator { texts -> texts.map {
+            when (it) {
+                "S rank monster!" -> "ئەهریمەنێکی پلەی S!"
+                "I found the API." -> "API ـەکەم دۆزییەوە."
+                literal -> "ID43 ـەکە پاشەکەوت بکە."
+                else -> error("Unexpected request: $it")
+            }
+        } }
+        assertEquals(listOf("ئەهریمەنێکی پلەی S!", "API ـەکەم دۆزییەوە.", literal) + labels,
+            translateImageWords(inputs.map(::unit), "ckb", ENGLISH_COMIC_SCRIPT, provider, retry))
+        assertEquals(listOf(Call(inputs.take(3), "en", "ckb")), provider.calls)
+        assertEquals(listOf("S rank monster!", "I found the API.", literal).map { Call(listOf(it), "en", "ckb") }, retry.calls)
     }
 
     @Test fun `automatic mode stays auto for mixed languages and retry work is bounded`() = runBlocking {

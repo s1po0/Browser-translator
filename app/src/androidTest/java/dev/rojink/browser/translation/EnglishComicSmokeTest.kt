@@ -133,6 +133,73 @@ class EnglishComicSmokeTest {
         }
     }
 
+    @Test fun rejectsCopiedLetteringAndPaintsOnlyRecoveredSorani(): Unit = runBlocking {
+        withTimeout(85_000) {
+            val data = instrumentation.context.assets.open("en-comic-retry.png").use { it.readBytes() }
+            val inputs = mutableListOf<String>()
+            val retries = java.util.concurrent.ConcurrentLinkedQueue<String>()
+            val rank = "E-RANK HUNTER,"
+            val guild = "THE HUNTER GUILD'S"
+            val good = "KEEP MOVING."
+            val unresolved = "THE GATE IS CLOSED."
+            val base = object : TranslationProvider {
+                override suspend fun translate(texts: List<String>, source: String, target: String): List<String> {
+                    assertEquals("en", source)
+                    assertEquals("ckb", target)
+                    inputs += texts.map { it.replace('’', '\'') }
+                    return texts.map { when (it) {
+                        rank -> "E-RANK HUNTER،"
+                        good -> "بەردەوام بە لە ڕۆیشتن."
+                        else -> it
+                    } }
+                }
+            }
+            val retry = object : TranslationProvider {
+                override suspend fun translate(texts: List<String>, source: String, target: String): List<String> {
+                    assertEquals("en", source)
+                    assertEquals("ckb", target)
+                    val text = texts.single()
+                    retries += text
+                    return listOf(when (text) {
+                        "E rank hunter," -> "ڕاوچی پلەی E،"
+                        "The hunter guild's" -> "سەندیکای ڕاوچییەکان"
+                        else -> text // No good reply for the gate balloon; leave those pixels alone.
+                    })
+                }
+            }
+            val decisions = mutableListOf<PaintDecision>()
+            ImagePipeline(context, paintDecision = { _, decision -> decisions += decision }).use { pipeline ->
+                val original = pipeline.preview(data)
+                val options = ReaderOptions("ckb", false, true, ENGLISH_COMIC_SCRIPT, false)
+                val rendered = pipeline.gallery(data, options, ReaderProviders(base, "comic-retry-fixture", null, imageRetry = retry), incognito = true)
+                val output = rendered.bitmap
+                try {
+                    assertEquals("Read whole separate balloons; no literal passed to MT: $inputs", listOf(rank, guild, good, unresolved).sorted(), inputs.sorted())
+                    assertEquals(listOf("E rank hunter,", "The gate is closed.", "The hunter guild's").sorted(), retries.sorted())
+                    assertNotNull(output)
+                    assertEquals(ImageTextCounts(4, 3, 3), rendered.counts)
+                    assertTrue("Unresolved gate balloon must still be reported", rendered.keptText)
+                    assertEquals(3, decisions.count { it == PaintDecision.DRAWN })
+                    assertEquals(1, decisions.count { it == PaintDecision.UNCHANGED })
+                    fun differences(box: Box): Int {
+                        var changed = 0
+                        for (y in box.top until box.bottom) for (x in box.left until box.right) {
+                            if (original.getPixel(x, y) != output!!.getPixel(x, y)) changed++
+                        }
+                        return changed
+                    }
+                    for (box in listOf(Box(414, 101, 681, 216), Box(143, 382, 460, 504), Box(540, 621, 791, 710))) {
+                        assertTrue("New lettering must be visible in $box", differences(box) > 300)
+                    }
+                    for (box in listOf(Box(36, 594, 471, 766), Box(20, 818, 813, 970), Box(28, 50, 252, 301))) {
+                        assertEquals("Unresolved text, literals and artwork must be pixel-identical in $box", 0, differences(box))
+                    }
+                    Log.i("SipanComicSmoke", "Comic retry fixture: 4 read, 3 translated and drawn (2 recovered), 1 untouched; recorded MT replies")
+                } finally { output?.recycle(); original.recycle() }
+            }
+        }
+    }
+
     @Test fun rescansTinyLetteringAndRepairsSpacingOnTheSameDifficultPanel() = runBlocking {
         withTimeout(110_000) {
             val data = coverageBytes

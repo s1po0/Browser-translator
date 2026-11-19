@@ -184,7 +184,7 @@ internal class ImagePipeline(
         val vision = providers.visionKey
         val key = if (save) withContext(Dispatchers.Default) {
             val langHint = language.lowercase().take(16)
-            sha256("sipan-image-v6:${sha256(input)}:${options.target}:${options.script}:${options.enhancedOcr}:$langHint:${providers.variant}:${vision != null}".toByteArray())
+            sha256("sipan-image-v7:${sha256(input)}:${options.target}:${options.script}:${options.enhancedOcr}:$langHint:${providers.variant}:${vision != null}".toByteArray())
         } else null
         if (key != null) cache.get(key)?.let { return ImageFrame.Cached(it) }
         val info = withContext(Dispatchers.Default) { imageInfo(input) }
