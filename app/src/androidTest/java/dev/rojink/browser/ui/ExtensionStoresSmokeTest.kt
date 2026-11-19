@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -121,6 +122,7 @@ class ExtensionStoresSmokeTest {
         val activity = compose.activity
         val packageName = InstrumentationRegistry.getInstrumentation().context.packageName
         val fixture = runBlocking { checkNotNull(installedExtensions(activity.packageManager)[packageName]) }
+        org.junit.Assert.assertTrue("Fixture APK must have a catalog-compatible version code: ${fixture.versionCode}", fixture.versionCode > 0)
         val record = SavedExtensionStore("https://device-fixture.example/index.json", "Device fixture store", checkNotNull(fixture.signer))
         val openedUrl = AtomicReference<String>()
         val client = OkHttpClient.Builder().addInterceptor { chain ->
@@ -152,8 +154,13 @@ class ExtensionStoresSmokeTest {
             compose.onNodeWithText(packageName).assertIsDisplayed()
             compose.onNodeWithContentDescription("Back").performClick()
             awaitText(record.name)
-            compose.onNodeWithText(record.name).performClick()
-            awaitText("Z catalog fixture")
+            compose.onNodeWithText(record.name).assertIsDisplayed().performSemanticsAction(SemanticsActions.OnClick) { click ->
+                org.junit.Assert.assertTrue(click())
+            }
+            try { awaitText("Z catalog fixture") } catch (e: ComposeTimeoutException) {
+                val rendered = compose.onRoot().printToString().lineSequence().filter { "Text =" in it }.joinToString("; ").take(580)
+                throw AssertionError("Version ${fixture.versionCode} fixture is missing from the catalog: $rendered", e)
+            }
             val installedY = compose.onNodeWithText("Z catalog fixture").fetchSemanticsNode().boundsInRoot.top
             val availableY = compose.onNodeWithText("A available").fetchSemanticsNode().boundsInRoot.top
             org.junit.Assert.assertTrue(installedY < availableY)
