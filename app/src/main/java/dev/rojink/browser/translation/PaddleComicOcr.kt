@@ -18,13 +18,12 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.FloatBuffer
 import kotlin.math.abs
-import kotlin.math.ceil
 
 private const val ASSETS = "ocr/ppocrv6-tiny"
 private const val LATIN_ASSETS = "ocr/ppocrv6-small-latin"
 private const val MAX_LINES = 320
 private const val MAX_REFINEMENTS = 8
-private const val MAX_TIGHT_CHECKS = 4
+private const val MAX_INK_CHECKS = 4
 private const val MAX_RESCANS = 5
 private const val REC_HEIGHT = 48
 
@@ -53,7 +52,7 @@ internal class PaddleComicOcr(private val context: Context) : AutoCloseable {
                 catch (_: LinkageError) { unavailable = true; return@withLock emptyList() }
                 val result = mutableListOf<OcrLine>()
                 var budget = if (refine) MAX_REFINEMENTS else 0
-                var tightBudget = MAX_TIGHT_CHECKS
+                var inkBudget = MAX_INK_CHECKS
                 val surface by lazy { ComicSurface(image, bubbles) }
                 var id = 1_000_000
                 fun read(box: Box, region: ComicBubble?, recovered: Boolean, isolatedBand: Boolean = false, masked: Bitmap? = null) {
@@ -70,10 +69,11 @@ internal class PaddleComicOcr(private val context: Context) : AutoCloseable {
                         budget--
                         val small = active.refine(raster, local)
                         if (small != null) inkVerified = verifyLatinInk(tiny, small, base) {
-                            val tight = if (tightBudget > 0) paddedInkCrop(box, surface.inkBounds(box)) else null
-                            tight?.let {
-                                tightBudget--
-                                active.refine(raster, it.moved(local.left - box.left, local.top - box.top))
+                            if (inkBudget <= 0) null else {
+                                inkBudget--
+                                val tight = paddedInkCrop(box, surface.inkBounds(box))
+                                val sample = tight?.moved(local.left - box.left, local.top - box.top) ?: local
+                                active.refine(raster, sample, narrow = tight == null)
                             }
                         }
                         if (small != null && (inkVerified || preferLatinReview(tiny, small, base))) small else tiny
@@ -183,21 +183,21 @@ internal class PaddleComicOcr(private val context: Context) : AutoCloseable {
 
         fun read(image: Bitmap, box: Box): PaddleText = read(image, box, rec, alphabet)
 
-        fun refine(image: Bitmap, box: Box): PaddleText? {
+        fun refine(image: Bitmap, box: Box, narrow: Boolean = false): PaddleText? {
             if (smallDisabled) return null
             return try {
                 val session = small ?: run {
                     smallAlphabet = alphabet(LATIN_ASSETS)
                     InferenceSession(env, context, "$LATIN_ASSETS/rec.onnx").also { small = it }
                 }
-                read(image, box, session, smallAlphabet)
+                read(image, box, session, smallAlphabet, narrow)
             } catch (e: CancellationException) { throw e }
             catch (_: Exception) { smallDisabled = true; null }
             catch (_: LinkageError) { smallDisabled = true; null }
         }
 
-        private fun read(image: Bitmap, box: Box, recognizer: InferenceSession, alphabet: List<String>): PaddleText {
-            val content = ceil(REC_HEIGHT * box.width.toDouble() / box.height).toInt().coerceIn(1, 1024)
+        private fun read(image: Bitmap, box: Box, recognizer: InferenceSession, alphabet: List<String>, narrow: Boolean = false): PaddleText {
+            val content = paddleContentWidth(box, REC_HEIGHT, narrow)
             val width = (((content + 31) / 32 + 1) * 32).coerceIn(96, 1024)
             val input = inputBuffer(width, REC_HEIGHT)
             fillTensor(image, box, content, REC_HEIGHT, width, detection = false, values = input)

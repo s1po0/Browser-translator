@@ -105,6 +105,12 @@ internal fun paddleRead(scores: FloatBuffer, steps: Int, alphabet: List<String>)
     return PaddleText(value.trim(), if (picked == 0) 0f else sum / picked, uncertainU)
 }
 
+/** A small alternate aspect sample changes the input even when the detected crop is already tight. */
+internal fun paddleContentWidth(box: Box, height: Int, narrow: Boolean = false): Int {
+    val normal = ceil(height * box.width.toDouble() / box.height).toInt().coerceIn(1, 1024)
+    return if (narrow && normal > 1) (normal * .91).roundToInt().coerceIn(1, normal - 1) else normal
+}
+
 /** Round the resized map dimensions to the detector's stride without growing huge/tall inputs. */
 internal fun paddleDimensions(width: Int, height: Int, longSide: Int = 960, shortSide: Int = 640): Pair<Int, Int> {
     val scale = min(longSide.toFloat() / maxOf(width, height), maxOf(1f, shortSide.toFloat() / minOf(width, height)))

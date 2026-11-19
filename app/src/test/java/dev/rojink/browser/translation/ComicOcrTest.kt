@@ -39,6 +39,9 @@ class ComicOcrTest {
         assertTrue(tiny.uncertainU)
         assertTrue(needsLatinReview(tiny, null, enclosed = true, recovered = false))
         assertFalse(needsLatinReview(tiny, null, enclosed = false, recovered = false))
+        val box = Box(0, 0, 65, 19)
+        assertEquals(165, paddleContentWidth(box, 48))
+        assertEquals(150, paddleContentWidth(box, 48, narrow = true))
     }
 
     @Test fun `optical agreement can replace confident fractured letters but not a label or a guess`() {
