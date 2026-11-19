@@ -66,7 +66,7 @@ internal fun paddleLineBoxes(map: FloatBuffer, width: Int, height: Int, imageWid
     return chosen.sortedWith(compareBy<Box> { it.top }.thenBy { it.left })
 }
 
-internal data class PaddleText(val value: String, val confidence: Float)
+internal data class PaddleText(val value: String, val confidence: Float, val uncertainU: Boolean = false)
 
 /** Greedy CTC: zero is blank, repeated indexes collapse, and the final class is a real space. */
 internal fun paddleRead(scores: FloatBuffer, steps: Int, alphabet: List<String>): PaddleText {
@@ -76,6 +76,9 @@ internal fun paddleRead(scores: FloatBuffer, steps: Int, alphabet: List<String>)
     var prev = 0
     var sum = 0f
     var picked = 0
+    var uncertainU = false
+    val upperU = alphabet.indexOf("U") + 1
+    val lowerU = alphabet.indexOf("u") + 1
     val value = buildString {
         for (step in 0 until steps) {
             val row = start + step * classes
@@ -86,14 +89,20 @@ internal fun paddleRead(scores: FloatBuffer, steps: Int, alphabet: List<String>)
                 if (probability > confidence) { best = index; confidence = probability }
             }
             if (best != 0 && best != prev && confidence.isFinite()) {
-                append(alphabet[best - 1])
+                val glyph = alphabet[best - 1]
+                append(glyph)
+                // A strong mean line score can hide one fractured U (read as I/L in some italic faces).
+                if (!uncertainU && glyph.length == 1 && glyph[0] in "IiLl") {
+                    uncertainU = (upperU > 0 && scores.get(row + upperU) >= .12f) ||
+                        (lowerU > 0 && scores.get(row + lowerU) >= .12f)
+                }
                 sum += confidence.coerceIn(0f, 1f)
                 picked++
             }
             prev = best
         }
     }
-    return PaddleText(value.trim(), if (picked == 0) 0f else sum / picked)
+    return PaddleText(value.trim(), if (picked == 0) 0f else sum / picked, uncertainU)
 }
 
 /** Round the resized map dimensions to the detector's stride without growing huge/tall inputs. */

@@ -26,7 +26,7 @@ internal class OnDeviceImageOcr(context: Context) : OcrProvider, AutoCloseable {
             val bubbles = comicBubbles(image)
             val found = try {
                 paddle.recognize(image, base.lines, if (hint.enhanced) bubbles else emptyList(),
-                    refine = hint.enhanced && (explicit || base.lines.any { reliableEnglish(it.text) }))
+                    refine = hint.enhanced && (explicit || base.lines.any { reliableEnglish(it.text) || hasEnglishRank(it.text) }))
             }
             catch (e: CancellationException) { throw e }
             catch (_: Exception) { emptyList() }

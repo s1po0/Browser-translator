@@ -55,17 +55,19 @@ private fun shortSoraniLine(text: String): String? {
     }
 }
 
-private val letterRank = Regex("""(?<![\p{L}\p{Nd}_-])([A-FS])[-\u2010\u2011\u2013](?i:rank)(?![\p{L}\p{Nd}_-])""")
+private val letterRank = Regex("""(?<![\p{L}\p{Nd}_-])([A-FS])[ \t]*[-\u2010\u2011\u2013][ \t]*(?i:rank)(?![\p{L}\p{Nd}_-])""")
 private val gradeCode = Regex("""(?<![\p{L}\p{Nd}_])[A-FS](?![\p{L}\p{Nd}_])""")
 private val rankWord = Regex("\\brank\\b", RegexOption.IGNORE_CASE)
-private val apostrophe = Regex("""(?<=\p{L})[‘’](?=\p{L})""")
+internal fun hasEnglishRank(text: String): Boolean = asciiLettering(text) && letterRank.containsMatchIn(text)
+private val tailPossessive = Regex("(?i)[a-z]{2,}'s[.,!?…]?$")
 private val retryWord = Regex("""\p{L}+(?:'\p{L}+)*""")
 
 /** Let MT see ordinary English rather than comic lettering. Leave spelling, boundaries and literals intact. */
 private fun soraniRetryInput(text: String): String {
     if (!asciiLettering(text) || imageLiteralSpans(text).isNotEmpty()) return text
-    val plain = apostrophe.replace(text, "'")
-    val recased = if (plain.none(Char::isLowerCase) && retryWord.findAll(plain).take(2).count() == 2) {
+    val plain = normalizeLatinApostrophes(text)
+    val allCaps = plain.count(Char::isLowerCase) * 10 <= plain.count(Char::isUpperCase)
+    val recased = if (allCaps && retryWord.findAll(plain).take(2).count() == 2) {
         val ranks = letterRank.findAll(plain).map { it.range.first }.toSet()
         var previousEnd = 0
         retryWord.replace(plain) { match ->
@@ -120,7 +122,15 @@ internal suspend fun translateImageWords(
         }
     }) {
         if (source.equals(target, ignoreCase = true)) continue
-        val batch = try { provider.translate(indices.map(input::get), source, target) }
+        val query = indices.map { index ->
+            val raw = input[index]
+            // These incomplete English phrases are often copied verbatim. Format them before the batch so a
+            // correctly read grade/possessive does not have to compete with genuinely failed bubbles for retry slots.
+            if (target == "ckb" && !units[index].vertical && (hasEnglishRank(raw) ||
+                    (source == "en" || englishProse(raw)) && tailPossessive.containsMatchIn(normalizeLatinApostrophes(raw)))) soraniRetryInput(raw)
+            else raw
+        }
+        val batch = try { provider.translate(query, source, target) }
         catch (_: ResponseFailure) { List(indices.size) { "" } }
         if (batch.size != indices.size) throw ResponseFailure()
         for ((index, after) in indices.zip(batch)) {
@@ -131,7 +141,7 @@ internal suspend fun translateImageWords(
             if (validImageTranslation(before, after, checkSource, target)) {
                 result[index] = polish(after)
             } else if (target == "ckb" && (knownEnglish || englishProse(before) ||
-                    !units[index].vertical && asciiLettering(before) && letterRank.containsMatchIn(before))) {
+                    !units[index].vertical && hasEnglishRank(before))) {
                 val local = if (knownEnglish) shortSoraniLine(before) else null
                 if (local != null) result[index] = local else {
                     val key = checkSource to before

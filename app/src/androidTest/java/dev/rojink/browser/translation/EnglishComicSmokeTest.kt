@@ -138,8 +138,8 @@ class EnglishComicSmokeTest {
             val data = instrumentation.context.assets.open("en-comic-retry.png").use { it.readBytes() }
             val inputs = mutableListOf<String>()
             val retries = java.util.concurrent.ConcurrentLinkedQueue<String>()
-            val rank = "E-RANK HUNTER,"
-            val guild = "THE HUNTER GUILD'S"
+            val rank = "E rank hunter,"
+            val guild = "The hunter guild's"
             val good = "KEEP MOVING."
             val unresolved = "THE GATE IS CLOSED."
             val base = object : TranslationProvider {
@@ -197,6 +197,56 @@ class EnglishComicSmokeTest {
                     Log.i("SipanComicSmoke", "Comic retry fixture: 4 read, 3 translated and drawn (2 recovered), 1 untouched; recorded MT replies")
                 } finally { output?.recycle(); original.recycle() }
             }
+        }
+    }
+
+    @Test fun readsThroughConfidentGlyphErrorsBeforeSoraniPainting(): Unit = runBlocking {
+        withTimeout(85_000) {
+            val data = instrumentation.context.assets.open("en-comic-retry.png").use { it.readBytes() }
+            val original = BitmapFactory.decodeByteArray(data, 0, data.size)
+            val painted = original.copy(Bitmap.Config.ARGB_8888, true)
+            try {
+                val bubbles = comicBubbles(original)
+                val surface = ComicSurface(original, bubbles)
+                PaddleComicOcr(context).use { ocr ->
+                    // Deliberately feed the false, high-confidence readings back as an ML Kit result. Geometry and both
+                    // checking reads are from the bundled on-device recognizers, not fake output text from a model.
+                    val actual = ocr.recognize(original)
+                    val toCorrupt = mapOf("HUNTER," to "HLINTER,", "THE HUNTER" to "THE HINTER", "GUILD'S" to "GUILD S")
+                    val faulty = actual.map { line ->
+                        val bad = toCorrupt[normalizeLatinApostrophes(line.text)]
+                        if (bad == null) line else line.copy(text = bad, confidence = .985f)
+                    }
+                    assertTrue("Recognized the three intended lines: ${actual.map { it.text }}", toCorrupt.values.all { bad -> faulty.any { it.text == bad } })
+                    val checked = ocr.recognize(original, faulty, bubbles, refine = true)
+                    for (text in toCorrupt.keys) assertTrue("A supported correction for $text: $checked",
+                        checked.any { normalizeLatinApostrophes(it.text) == text && it.inkVerifiedLatin })
+                    val fixed = reconcileComicOcr(faulty, checked, explicit = true, lightBorder = surface::letteringSurface)
+                    val page = OcrPage(fixed, false, script = Script.LATIN, comic = true, bubbles = bubbles)
+                    val layout = groupForImage(page, surface::sameInterior)
+                    val contents = layout.units.map { normalizeLatinApostrophes(it.text) }
+                    assertTrue("Clean whole fragments in the layout: $contents", contents.containsAll(listOf("E-RANK HUNTER,", "THE HUNTER GUILD'S")))
+                    assertEquals(3, layout.protected.size)
+                    val provider = object : TranslationProvider {
+                        override suspend fun translate(texts: List<String>, source: String, target: String): List<String> = texts.map {
+                            when (it) {
+                                "E rank hunter," -> "ڕاوچی پلەی E،"
+                                "The hunter guild's" -> "سەندیکای ڕاوچییەکان"
+                                else -> it
+                            }
+                        }
+                    }
+                    val translated = translateImageWords(layout.units, "ckb", ENGLISH_COMIC_SCRIPT, provider, provider)
+                    assertEquals("ڕاوچی پلەی E،", translated[contents.indexOf("E-RANK HUNTER,")])
+                    assertEquals("سەندیکای ڕاوچییەکان", translated[contents.indexOf("THE HUNTER GUILD'S")])
+                    assertEquals(2, ImageRenderer(context).paint(painted, layout.units, translated, layout.protected, "ckb", comic = true, bubbles = bubbles))
+                    for (box in layout.protected) for (y in box.top until box.bottom) for (x in box.left until box.right) {
+                        assertEquals(original.getPixel(x, y), painted.getPixel(x, y))
+                    }
+                    assertFalse(painted.sameAs(original))
+                    Log.i("SipanComicSmoke", "Glyph review fixture: 3 corrupted high-confidence lines corrected by model agreement; 2 whole balloons painted")
+                }
+            } finally { original.recycle(); painted.recycle() }
         }
     }
 

@@ -20,7 +20,7 @@ internal data class Box(val left: Int, val top: Int, val right: Int, val bottom:
 internal data class OcrWord(val text: String, val box: Box)
 internal data class OcrLine(
     val text: String, val box: Box, val words: List<OcrWord>, val block: Int, val vertical: Boolean = false, val confidence: Float = .70f,
-    val bubbleRead: ComicBubble? = null,
+    val bubbleRead: ComicBubble? = null, val inkVerifiedLatin: Boolean = false,
 )
 internal data class OcrPage(
     val lines: List<OcrLine>, val rightFirst: Boolean, val enhancedTiles: Int = 0,

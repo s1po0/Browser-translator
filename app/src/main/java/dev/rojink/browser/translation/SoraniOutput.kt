@@ -42,6 +42,9 @@ internal val keepOriginal = Regex("""
 private val acronyms = setOf("api", "apk", "html", "https", "http", "url", "ocr", "pdf", "css", "json", "xml", "zip", "usb", "isbn",
     "usd", "iqd", "eur", "jpy", "krw", "cny", "sar", "gbp", "kg", "cm", "mm", "mb", "gb", "ui", "ux", "app", "rtl", "gpu", "cpu")
 internal fun isKnownAcronym(lowercase: String): Boolean = lowercase in acronyms
+private val knownNameTokens = names.keys.flatMap { it.split(' ', '-') }.toSet()
+internal fun knownSoraniResidue(lowercase: String): Boolean =
+    lowercase in acronyms || lowercase in knownNameTokens || lowercase in readingTerms
 private val notNames = setOf("the", "and", "are", "we", "you", "i", "of", "to", "in", "go", "no", "yes", "hello", "home", "here",
     "read", "my", "your", "be", "is", "a", "an", "stop", "please", "thank", "out", "look", "wait", "don't", "open", "now", "this", "that", "what", "good", "morning", "welcome", "chapter", "later", "turn", "fight", "run", "as", "it", "on", "for", "at", "from", "with", "too", "not", "can", "will", "should", "must", "there", "how", "really", "okay")
 

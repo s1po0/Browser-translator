@@ -24,6 +24,49 @@ class ComicOcrTest {
         assertEquals(.96f, result.confidence, .001f)
     }
 
+    @Test fun `a high mean line score can hide a competing U on the same ink`() {
+        val alphabet = listOf("H", "L", "U", "N", "T", "E", "R", "I")
+        val rows = listOf("H", "L", "I", "N", "T", "E", "R")
+        val scores = FloatArray(rows.size * (alphabet.size + 1))
+        for ((row, letter) in rows.withIndex()) {
+            val at = row * (alphabet.size + 1)
+            scores[at + alphabet.indexOf(letter) + 1] = if (letter == "I") .73f else .99f
+            if (letter == "I") scores[at + alphabet.indexOf("U") + 1] = .13f
+        }
+        val tiny = paddleRead(FloatBuffer.wrap(scores), rows.size, alphabet)
+        assertEquals("HLINTER", tiny.value)
+        assertTrue(tiny.confidence > .95f)
+        assertTrue(tiny.uncertainU)
+        assertTrue(needsLatinReview(tiny, null, enclosed = true, recovered = false))
+        assertFalse(needsLatinReview(tiny, null, enclosed = false, recovered = false))
+    }
+
+    @Test fun `optical agreement can replace confident fractured letters but not a label or a guess`() {
+        val broken = line("THE HLINTER", 24, 34).copy(confidence = .98f)
+        val confirmed = broken.copy(text = "THE HUNTER", box = broken.box.expand(2, 1), inkVerifiedLatin = true)
+        fun output(base: OcrLine, alternate: OcrLine, surface: Boolean = true) =
+            reconcileComicOcr(listOf(base), listOf(alternate), explicit = true) { surface }.single()
+        assertEquals(confirmed.text, output(broken, confirmed).text)
+        assertEquals(broken.box, output(broken, confirmed).box)
+        assertEquals(broken.text, output(broken, confirmed.copy(inkVerifiedLatin = false)).text)
+        assertEquals(broken.text, output(broken, confirmed, surface = false).text)
+        assertEquals(broken.text, output(broken, confirmed.copy(text = "OUR HUNTER")).text)
+        assertEquals(broken.text, output(broken, confirmed.copy(text = "THE MUNTER")).text)
+        val literal = broken.copy(text = "THE HLINTER ID42")
+        assertEquals(literal.text, output(literal, confirmed.copy(text = "THE HUNTER ID42")).text)
+        assertEquals(LatinInkChange.FRACTURED_U, latinInkChange("HINTER.", "HUNTER,"))
+        assertEquals(LatinInkChange.FRACTURED_U, latinInkChange("GIILD'S", "GUILD’S"))
+        assertEquals(LatinInkChange.APOSTROPHE, latinInkChange("GUILD S", "GUILD’S"))
+        assertEquals(LatinInkChange.APOSTROPHE, latinInkChange("GUILDS", "GUILD'S"))
+        assertTrue(needsLatinReview(PaddleText("GUILD’S", .993f), broken.copy(text = "GUILDS"), enclosed = true, recovered = false))
+        val tiny = PaddleText("HINTER.", .957f, uncertainU = true)
+        val small = PaddleText("HUNTER.", .987f)
+        assertTrue(verifyLatinInk(tiny, small, broken.copy(text = "HLINTER.")) { PaddleText("HUNTER,", .989f) })
+        assertFalse(verifyLatinInk(tiny, small, null) { PaddleText("HINTER.", .989f) })
+        assertFalse(verifyLatinInk(PaddleText("GUILDS", .98f), PaddleText("GUILD'S", .99f), null) { error("Apostrophe needs independent agreement") })
+        assertTrue(verifyLatinInk(PaddleText("GUILD’S", .98f), PaddleText("GUILD'S", .99f), broken.copy(text = "GUILD S")) { null })
+    }
+
     @Test fun `English host does not override recognized script or force comic OCR for non-English text`() {
         fun page(value: String, script: Script) = OcrPage(listOf(line(value, 15, 25)), false, script = script)
         val auto = OcrHint("auto", "en-US")
@@ -115,7 +158,7 @@ class ComicOcrTest {
             val provider = RecordingTranslator { listOf("E-RANK HUNTER،", moving, guild, "E-RANK HUNTER،") }
             val retry = RecordingTranslator { texts -> texts.map { recovery.getValue(it) } }
             val output = translateImageWords(inputs.map(::unit), "ckb", mode, provider, retry)
-            assertEquals(listOf(Call(inputs, source, "ckb")), provider.calls)
+            assertEquals(listOf(Call(listOf("E rank hunter,", "KEEP MOVING.", "The hunter guild's", "E rank hunter,"), source, "ckb")), provider.calls)
             assertEquals(recovery.keys.map { Call(listOf(it), source, "ckb") }, retry.calls)
             assertEquals(listOf(recovery.values.first(), moving, recovery.values.last(), recovery.values.first()), output)
         }
@@ -132,6 +175,26 @@ class ComicOcrTest {
         }
         assertFalse(validImageTranslation("HUNTER,", "HUNTER،", "auto", "ckb"))
         assertTrue(validImageTranslation(rank, "Chasseur de rang E,", "en", "fr"))
+    }
+
+    @Test fun `rejects the field reply that preserves broken Latin alongside Sorani`() = runBlocking {
+        val rank = "E-RANK HLINTER."
+        val guild = "THE HUNTER GUILD ’ s"
+        val fragments = listOf(rank, guild)
+        val provider = RecordingTranslator { it }
+        val retry = RecordingTranslator { texts -> texts.map { when (it) {
+            "E rank hlinter." -> "E ڕیزبەندی hlinter." // Exact GTX reply from the failing OCR spelling.
+            "The hunter guild's" -> "سەندیکای ڕاوچییەکان"
+            else -> error("Unexpected input: $it")
+        } } }
+        assertEquals(listOf(rank, "سەندیکای ڕاوچییەکان"),
+            translateImageWords(fragments.map(::unit), "ckb", ENGLISH_COMIC_SCRIPT, provider, retry))
+        assertFalse(validImageTranslation(rank, "E ڕیزبەندی Hlinter.", "en", "ckb"))
+        assertFalse(validImageTranslation("THE HUNTER GIILD'S", "ڕاوچی giild's", "auto", "ckb"))
+        assertFalse(validImageTranslation("THE HUNTER GUILD S", "سەندیکای ڕاوچییەکان s", "en", "ckb"))
+        assertTrue(validImageTranslation("SUNG JIN-WOO IS HERE.", "Sung Jin-Woo لێرەیە.", "en", "ckb"))
+        assertTrue(validImageTranslation("Mira is here.", "Mira لێرەیە.", "en", "ckb"))
+        assertTrue(validImageTranslation("E-RANK HUNTER.", "ڕاوچی پلەی E.", "en", "ckb"))
     }
 
     @Test fun `retry keeps protected labels and good neighbors while a bad result stays original`() = runBlocking {
@@ -151,7 +214,7 @@ class ComicOcrTest {
         } }
         assertEquals(listOf("ئەهریمەنێکی پلەی S!", "API ـەکەم دۆزییەوە.", literal) + labels,
             translateImageWords(inputs.map(::unit), "ckb", ENGLISH_COMIC_SCRIPT, provider, retry))
-        assertEquals(listOf(Call(inputs.take(3), "en", "ckb")), provider.calls)
+        assertEquals(listOf(Call(listOf("S rank monster!", acronyms, literal), "en", "ckb")), provider.calls)
         assertEquals(listOf("S rank monster!", "I found the API.", literal).map { Call(listOf(it), "en", "ckb") }, retry.calls)
     }
 

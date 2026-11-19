@@ -37,10 +37,12 @@ internal fun needsLatinReview(tiny: PaddleText, base: OcrLine?, enclosed: Boolea
     val grounded = enclosed || base?.let { !it.vertical && englishLettering(it.text) } == true || englishProse(text) ||
         words(text).any(joinedDialogueWords::contains)
     if (!grounded || tiny.confidence < .28f && !recovered || isProtectedImageLiteral(text)) return false
-    return recovered && tiny.confidence < .92f || tiny.confidence < .88f ||
+    return recovered && tiny.confidence < .92f || tiny.confidence < .88f || tiny.uncertainU ||
+        (enclosed && hasSplitUShape(text) && tiny.confidence < .985f) ||
         words(text).any { it.length >= 13 || it in joinedDialogueWords } ||
         base?.let { !it.vertical && englishLettering(it.text) && it.text.trim() != text.trim() &&
-            (alphaText(it.text) != alphaText(text) || words(it.text).size > words(text).size) } == true
+            (alphaText(it.text) != alphaText(text) || words(it.text).size > words(text).size ||
+                latinInkChange(it.text, text) == LatinInkChange.APOSTROPHE || latinInkChange(text, it.text) == LatinInkChange.APOSTROPHE) } == true
 }
 
 internal fun preferLatinReview(tiny: PaddleText, small: PaddleText, base: OcrLine?): Boolean {
@@ -63,7 +65,7 @@ internal fun useComicOcr(base: OcrPage, hint: OcrHint): Boolean {
     val lang = hint.documentLanguage.lowercase(Locale.ROOT).substringBefore('-').substringBefore('_')
     val letterLines = base.lines.filter { line -> line.confidence >= .52f && line.text.any(Char::isLetter) }
     if (letterLines.count { !asciiLettering(it.text) && it.text.count(Char::isLetter) >= 3 } * 4 > letterLines.size) return false
-    return letterLines.any { englishProse(it.text) } || letterLines.isEmpty() && lang in setOf("en", "", "und") ||
+    return letterLines.any { englishProse(it.text) || hasEnglishRank(it.text) } || letterLines.isEmpty() && lang in setOf("en", "", "und") ||
         lang == "en" && letterLines.size <= 2 && letterLines.all { englishLettering(it.text) && it.confidence < .69f }
 }
 
@@ -140,6 +142,10 @@ internal fun reconcileComicOcr(
                 line.confidence >= .88f && text.count { it in ".,!?:;…" } > old.text.count { it in ".,!?:;…" }) &&
             (explicit || englishProse(text))) {
             result[index] = old.copy(text = text) // Keep ML Kit word boxes and tight geometry.
+        } else if (line.inkVerifiedLatin && line.confidence >= .91f && areaOverlap(old.box, line.box) >= .78 &&
+            abs(old.box.y - line.box.y) <= minOf(old.box.height, line.box.height) * .46f &&
+            latinInkChange(old.text, text) != null && lightBorder(line.box)) {
+            result[index] = old.copy(text = text, confidence = line.confidence, inkVerifiedLatin = true)
         } else if (old.confidence < .67f && line.confidence >= .88f && newLetters.length >= oldLetters.length && englishProse(text) &&
             areaOverlap(old.box, line.box) > .70) {
             result[index] = old.copy(text = text, confidence = line.confidence)
@@ -161,7 +167,9 @@ internal fun comicNeighbors(a: OcrLine, b: OcrLine, enclosed: Boolean = false, w
         abs(a.box.x - b.box.x) <= maxOf(height * .72f, if (enclosed) larger * .28f else width * .17f)
 }
 
-/** A leftover English pronoun/phrase is not a name to transliterate. Keep the test conservative. */
+private fun nameCase(word: String) = word.first().isUpperCase() && word.drop(1).any(Char::isLowerCase)
+
+/** A partial reply containing a copied OCR error is not a translation, even if other words are Sorani. */
 internal fun incompleteSorani(source: String, output: String, knownEnglish: Boolean): Boolean {
     if (output.isBlank()) return true
     val sequence = alphaText(source)
@@ -169,6 +177,15 @@ internal fun incompleteSorani(source: String, output: String, knownEnglish: Bool
     if (!knownEnglish && !englishProse(source)) return false
     val withoutLiterals = imageLiteralSpans(output).fold(output) { text, span -> text.replace(span, " ") }
     if (withoutLiterals.none { it in '\u0600'..'\u08ff' && it.isLetter() }) return true
-    val from = words(source).toSet()
-    return words(withoutLiterals).any { it in from && (it in englishWords && it.length > 1 || it == "i" || it in plainShort) }
+    val originals = asciiWord.findAll(normalizeLatinApostrophes(source)).map { it.value }.groupBy { it.lowercase(Locale.ROOT) }
+    return asciiWord.findAll(normalizeLatinApostrophes(withoutLiterals)).map { it.value }.any { token ->
+        val lower = token.lowercase(Locale.ROOT)
+        if (token == "s" && ("s" in originals || originals.keys.any { it.endsWith("'s") })) return@any true
+        val matches = originals[lower] ?: return@any false
+        when {
+            lower == "i" || lower in plainShort || lower.length > 1 && lower in englishWords -> true
+            lower.length == 1 || knownSoraniResidue(lower) -> false // e.g. rank E, API, mapped names
+            else -> !(nameCase(token) && matches.any(::nameCase))
+        }
+    }
 }

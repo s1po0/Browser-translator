@@ -24,6 +24,7 @@ private const val ASSETS = "ocr/ppocrv6-tiny"
 private const val LATIN_ASSETS = "ocr/ppocrv6-small-latin"
 private const val MAX_LINES = 320
 private const val MAX_REFINEMENTS = 8
+private const val MAX_TIGHT_CHECKS = 4
 private const val MAX_RESCANS = 5
 private const val REC_HEIGHT = 48
 
@@ -52,6 +53,8 @@ internal class PaddleComicOcr(private val context: Context) : AutoCloseable {
                 catch (_: LinkageError) { unavailable = true; return@withLock emptyList() }
                 val result = mutableListOf<OcrLine>()
                 var budget = if (refine) MAX_REFINEMENTS else 0
+                var tightBudget = MAX_TIGHT_CHECKS
+                val surface by lazy { ComicSurface(image, bubbles) }
                 var id = 1_000_000
                 fun read(box: Box, region: ComicBubble?, recovered: Boolean, isolatedBand: Boolean = false, masked: Bitmap? = null) {
                     if (result.size >= MAX_LINES || box.width < 6 || box.height < 5) return
@@ -62,15 +65,24 @@ internal class PaddleComicOcr(private val context: Context) : AutoCloseable {
                     if (isolatedBand && (tiny.confidence < .93f || !reliableEnglish(tiny.value))) return
                     val base = baseline.firstOrNull { abs(it.box.y - box.y) < box.height * .45f && areaOverlap(it.box, box) > .69 }
                     val needsReview = !isolatedBand && budget > 0 && needsLatinReview(tiny, base, region != null, recovered)
+                    var inkVerified = false
                     val text = if (needsReview) {
                         budget--
                         val small = active.refine(raster, local)
-                        if (small != null && preferLatinReview(tiny, small, base)) small else tiny
+                        if (small != null) inkVerified = verifyLatinInk(tiny, small, base) {
+                            val tight = if (tightBudget > 0) paddedInkCrop(box, surface.inkBounds(box)) else null
+                            tight?.let {
+                                tightBudget--
+                                active.refine(raster, it.moved(local.left - box.left, local.top - box.top))
+                            }
+                        }
+                        if (small != null && (inkVerified || preferLatinReview(tiny, small, base))) small else tiny
                     } else tiny
                     if (text.confidence >= if (recovered) .76f else .62f) {
                         if (text.value.length in 1..280 && text.value.any(Char::isLetterOrDigit)) {
                             val grounded = region?.takeIf { recovered && it.contour?.fits(box) == true }
-                            val reading = OcrLine(text.value, box, emptyList(), id++, confidence = text.confidence, bubbleRead = grounded)
+                            val reading = OcrLine(text.value, box, emptyList(), id++, confidence = text.confidence,
+                                bubbleRead = grounded, inkVerifiedLatin = inkVerified)
                             val spilled = if (grounded != null) result.indexOfFirst { replacesSpilledLine(reading, it) } else -1
                             if (spilled >= 0) result[spilled] = reading
                             else if (result.none { it.bubbleRead != null && replacesSpilledLine(it, reading) }) mergeOcrLines(result, listOf(reading))
