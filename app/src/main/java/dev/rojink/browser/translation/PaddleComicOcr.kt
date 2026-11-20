@@ -7,6 +7,10 @@ import ai.onnxruntime.OrtSession
 import android.app.ActivityManager
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
+import android.graphics.Paint
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
@@ -113,7 +117,7 @@ internal class PaddleComicOcr(private val context: Context) : AutoCloseable {
                     val masked = contour?.maskedCrop(image, area)
                     try {
                         val detected = if (masked != null) active.detect(masked, true).map { it.moved(area.left, area.top) }
-                            else detectRegion(active, image, area, true)
+                            else detectRegion(active, image, area, true, invert = bubble.dark)
                         val proposals = detected.filter { box ->
                             (masked == null || contour?.containsInk(box) == true) && remaining.any { band ->
                                 abs(box.y - band.y) <= maxOf(box.height, band.height) * .68f && areaOverlap(box, band) > .30
@@ -135,8 +139,9 @@ internal class PaddleComicOcr(private val context: Context) : AutoCloseable {
         }
     }
 
-    private fun detectRegion(active: Model, image: Bitmap, area: Box, recover: Boolean): List<Box> {
-        val crop = Bitmap.createBitmap(image, area.left, area.top, area.width, area.height)
+    private fun detectRegion(active: Model, image: Bitmap, area: Box, recover: Boolean, invert: Boolean = false): List<Box> {
+        val raw = Bitmap.createBitmap(image, area.left, area.top, area.width, area.height)
+        val crop = if (invert) try { raw.invertedCopy() } finally { raw.recycle() } else raw
         return try { active.detect(crop, recover).map { it.moved(area.left, area.top) } }
         finally { if (crop !== image) crop.recycle() }
     }
@@ -268,4 +273,18 @@ private fun fillTensor(image: Bitmap, box: Box?, contentWidth: Int, height: Int,
         values.put(start + plane, if (detection) (g - .456f) / .224f else g * 2f - 1f)
         values.put(start + plane * 2, if (detection) (r - .406f) / .225f else r * 2f - 1f)
     }
+}
+
+private fun Bitmap.invertedCopy(): Bitmap {
+    val out = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+    val paint = Paint().apply {
+        colorFilter = ColorMatrixColorFilter(ColorMatrix(floatArrayOf(
+            -1f, 0f, 0f, 0f, 255f,
+            0f, -1f, 0f, 0f, 255f,
+            0f, 0f, -1f, 0f, 255f,
+            0f, 0f, 0f, 1f, 0f,
+        )))
+    }
+    Canvas(out).drawBitmap(this, 0f, 0f, paint)
+    return out
 }
