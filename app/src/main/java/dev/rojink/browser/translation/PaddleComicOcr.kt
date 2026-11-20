@@ -98,7 +98,7 @@ internal class PaddleComicOcr(private val context: Context) : AutoCloseable {
                     ensureActive()
                     if (result.size >= MAX_LINES) break
                     val tileBoxes = detectRegion(active, image, tile, false)
-                    val extraBoxes = if (comic && comicDetector.available) {
+                    val extraBoxes = if (comicDetector.available) {
                         val tileCrop = Bitmap.createBitmap(image, tile.left, tile.top, tile.width, tile.height)
                         try {
                             comicDetector.detect(tileCrop).map { it.moved(tile.left, tile.top) }
