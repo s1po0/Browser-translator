@@ -45,24 +45,24 @@ import dev.rojink.browser.R
 import dev.rojink.browser.data.BrowserSettings
 import java.util.Locale
 
-val Ink = Color(0xFF123B32)
-val Moss = Color(0xFF235C48)
-val Lime = Color(0xFFE5F7CE)
-val Apricot = Color(0xFFFFA07A)
+val Ink = Color(0xFF0F172A)
+val Moss = Color(0xFF4F46E5)
+val Lime = Color(0xFFE0E7FF)
+val Apricot = Color(0xFF38BDF8)
 private val light = lightColorScheme(
-    primary = Moss, onPrimary = Color.White, primaryContainer = Lime, onPrimaryContainer = Ink,
-    secondary = Color(0xFF486350), secondaryContainer = Color(0xFFE1EBDB), onSecondaryContainer = Ink,
-    tertiary = Color(0xFF995133), tertiaryContainer = Color(0xFFFFDBCB), onTertiaryContainer = Color(0xFF391609),
-    background = Color(0xFFF4F3EC), onBackground = Color(0xFF18241E), surface = Color(0xFFFEFDF8),
-    onSurface = Color(0xFF18241E), surfaceVariant = Color(0xFFE8ECE2), onSurfaceVariant = Color(0xFF49564B),
-    outline = Color(0xFF738071), outlineVariant = Color(0xFFD8DCD0),
-    surfaceContainerLow = Color(0xFFF7F7EE), surfaceContainer = Color(0xFFEEF0E5), surfaceContainerHigh = Color(0xFFE7EBDF),
+    primary = Moss, onPrimary = Color.White, primaryContainer = Lime, onPrimaryContainer = Color(0xFF1E1B4B),
+    secondary = Color(0xFF0284C7), secondaryContainer = Color(0xFFE0F2FE), onSecondaryContainer = Color(0xFF0C4A6E),
+    tertiary = Color(0xFFDB2777), tertiaryContainer = Color(0xFFFCE7F3), onTertiaryContainer = Color(0xFF831843),
+    background = Color(0xFFF8FAFC), onBackground = Ink, surface = Color(0xFFFFFFFF),
+    onSurface = Ink, surfaceVariant = Color(0xFFF1F5F9), onSurfaceVariant = Color(0xFF475569),
+    outline = Color(0xFF94A3B8), outlineVariant = Color(0xFFE2E8F0),
+    surfaceContainerLow = Color(0xFFF8FAFC), surfaceContainer = Color(0xFFF1F5F9), surfaceContainerHigh = Color(0xFFE2E8F0),
 )
 private val dark = darkColorScheme(
-    primary = Color(0xFFAFE1B6), onPrimary = Color(0xFF133B2A), primaryContainer = Color(0xFF25533F), onPrimaryContainer = Lime,
-    secondary = Color(0xFFBFD5C1), secondaryContainer = Color(0xFF354439), onSecondaryContainer = Lime,
-    tertiary = Apricot, tertiaryContainer = Color(0xFF653824), onTertiaryContainer = Color(0xFFFFDBCB),
-    background = Color(0xFF101A16), surface = Color(0xFF18251E), surfaceVariant = Color(0xFF283830),
+    primary = Color(0xFF818CF8), onPrimary = Color(0xFF1E1B4B), primaryContainer = Color(0xFF312E81), onPrimaryContainer = Lime,
+    secondary = Color(0xFF38BDF8), secondaryContainer = Color(0xFF0C4A6E), onSecondaryContainer = Color(0xFFE0F2FE),
+    tertiary = Color(0xFFF472B6), tertiaryContainer = Color(0xFF831843), onTertiaryContainer = Color(0xFFFCE7F3),
+    background = Color(0xFF0B0F19), surface = Color(0xFF131A2A), surfaceVariant = Color(0xFF1E293B),
     onSurfaceVariant = Color(0xFFB8C9BA), outline = Color(0xFF8E9F90), outlineVariant = Color(0xFF43554A),
     surfaceContainerLow = Color(0xFF14201A), surfaceContainer = Color(0xFF1E2D25), surfaceContainerHigh = Color(0xFF293930),
 )
