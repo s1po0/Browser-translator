@@ -22,7 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Apps
+import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
@@ -423,12 +423,12 @@ private enum class Screen(val title: Int) {
             if (tab.address.isEmpty()) {
                 DockShortcut(R.string.tabs, Modifier.weight(1f), { open(Screen.Tabs) }) { TabCounter(browser.tabs.size) }
                 DockShortcut(R.string.bookmarks, Modifier.weight(1f), { open(Screen.Bookmarks) }) { Icon(Icons.Default.Star, null, Modifier.size(21.dp)) }
-                DockShortcut(R.string.extension_stores, Modifier.weight(1f), { open(Screen.ExtensionStores) }) { Icon(Icons.Default.Apps, null, Modifier.size(21.dp)) }
+                DockShortcut(R.string.extension_stores, Modifier.weight(1f), { open(Screen.ExtensionStores) }) { Icon(Icons.Default.Build, null, Modifier.size(21.dp)) }
                 DockShortcut(R.string.settings, Modifier.weight(1f), { open(Screen.Settings) }) { Icon(Icons.Default.Settings, null, Modifier.size(21.dp)) }
             } else {
                 IconButton({ browser.back() }, enabled = tab.canBack || tab.find) { Icon(Icons.AutoMirrored.Filled.ArrowBack, tr(R.string.back)) }
                 IconButton(browser::forward, enabled = tab.canForward) { Icon(Icons.AutoMirrored.Filled.ArrowForward, tr(R.string.forward)) }
-                IconButton({ open(Screen.ExtensionStores) }) { Icon(Icons.Default.Apps, tr(R.string.extension_stores)) }
+                IconButton({ open(Screen.ExtensionStores) }) { Icon(Icons.Default.Build, tr(R.string.extension_stores)) }
                 val tabLabel = tr(R.string.tabs)
                 IconButton({ open(Screen.Tabs) }, Modifier.semantics { contentDescription = "$tabLabel: ${browser.tabs.size}" }) { TabCounter(browser.tabs.size) }
                 val colors = if (translationActive) ButtonDefaults.buttonColors(containerColor = scheme.primaryContainer, contentColor = scheme.onPrimaryContainer)
