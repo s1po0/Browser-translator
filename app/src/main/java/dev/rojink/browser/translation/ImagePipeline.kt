@@ -35,7 +35,7 @@ import kotlin.coroutines.coroutineContext
 private const val INPUT_LIMIT = 14 * 1024 * 1024
 private val regionFormats = setOf("image/jpeg", "image/png", "image/webp")
 // A tall strip owns a canvas plus one detailed decode. Avoid several such scans competing for RAM.
-private val longImageSlot = Semaphore(1)
+private val longImageSlot = Semaphore(2)
 private val budgetLock = Any()
 private lateinit var sharedSlots: Semaphore
 private fun imageSlots(context: Context): Semaphore = synchronized(budgetLock) {
@@ -43,8 +43,8 @@ private fun imageSlots(context: Context): Semaphore = synchronized(budgetLock) {
         val memory = context.getSystemService(ActivityManager::class.java)
         val count = when {
             memory == null || memory.isLowRamDevice || memory.memoryClass < 128 -> 1
-            memory.memoryClass < 256 -> 2
-            else -> 3
+            memory.memoryClass < 256 -> 3
+            else -> 4
         }
         sharedSlots = Semaphore(count)
     }
