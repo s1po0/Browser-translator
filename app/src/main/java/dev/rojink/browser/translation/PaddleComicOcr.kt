@@ -84,9 +84,16 @@ internal class PaddleComicOcr(private val context: Context) : AutoCloseable {
         for (group in inkGroups(image, boxes.take(MAX_INK_LINES))) {
             ensureActive()
             if (result.size >= 8) break
-            val whole = settle(group.reduce(Box::union).expand(3, 3).clip(image.width, image.height))
-            if (whole != null) result += whole
-            else for (box in group) settle(box.expand(3, 3).clip(image.width, image.height))?.let { result += it }
+            val kept = mutableListOf<OcrLine>()
+            for (box in group) {
+                val line = settle(box.expand(3, 3).clip(image.width, image.height)) ?: continue
+                if (kept.none { areaOverlap(it.box, line.box) >= .60 }) kept += line
+            }
+            if (kept.size >= 2) {
+                val block = kept.map { it.box }.reduce(Box::union)
+                result += OcrLine(kept.sortedBy { it.box.top }.joinToString(" ") { it.text.trim() }, block, emptyList(), id++,
+                    confidence = kept.minOf { it.confidence })
+            } else result += kept
         }
         result
     }
@@ -99,8 +106,8 @@ internal class PaddleComicOcr(private val context: Context) : AutoCloseable {
         var inkBudget = MAX_INK_CHECKS
         val surface by lazy { ComicSurface(image, bubbles) }
         var id = 1_000_000
-        fun read(box: Box, region: ComicBubble?, recovered: Boolean, isolatedBand: Boolean = false, masked: Bitmap? = null, retry: Boolean = false) {
-            if (result.size >= MAX_LINES || box.width < 6 || box.height < 5) return
+        fun read(box: Box, region: ComicBubble?, recovered: Boolean, isolatedBand: Boolean = false, masked: Bitmap? = null, retry: Boolean = false): OcrLine? {
+            if (result.size >= MAX_LINES || box.width < 6 || box.height < 5) return null
             ensureActive()
             val raster = masked ?: image
             val local = if (masked != null) checkNotNull(region).bounds.let { box.moved(-it.left, -it.top) } else box
@@ -109,7 +116,7 @@ internal class PaddleComicOcr(private val context: Context) : AutoCloseable {
             val tiny = if (retry && first.confidence < .62f) {
                 active.refine(raster, local)?.takeIf { it.confidence >= .62f && englishLettering(it.value) } ?: first
             } else first
-            if (isolatedBand && (tiny.confidence < .93f || !reliableEnglish(tiny.value))) return
+            if (isolatedBand && (tiny.confidence < .93f || !reliableEnglish(tiny.value))) return null
             val base = baseline.firstOrNull { abs(it.box.y - box.y) < box.height * .45f && areaOverlap(it.box, box) > .69 }
             val needsReview = !isolatedBand && budget > 0 && needsLatinReview(tiny, base, region != null, recovered)
             var inkVerified = false
@@ -134,8 +141,10 @@ internal class PaddleComicOcr(private val context: Context) : AutoCloseable {
                     val spilled = if (grounded != null) result.indexOfFirst { replacesSpilledLine(reading, it) } else -1
                     if (spilled >= 0) result[spilled] = reading
                     else if (result.none { it.bubbleRead != null && replacesSpilledLine(it, reading) }) mergeOcrLines(result, listOf(reading))
+                    return reading
                 }
             }
+            return null
         }
         for (tile in ocrTiles(image.width, image.height)) {
             ensureActive()
@@ -145,20 +154,29 @@ internal class PaddleComicOcr(private val context: Context) : AutoCloseable {
                 read(box, comicBubbleFor(box, bubbles), false)
             }
         }
-        // Handwritten lettering in burst or open bubbles: the ink proposes the block, the reader confirms the lines.
+        // Handwritten lettering in burst or open bubbles: the ink proposes each line, the readers confirm them.
         val leftovers = comicTextLines(image).filter { box -> baseline.none { areaOverlap(it.box, box) >= .70 } }
         for (group in inkGroups(image, leftovers)) {
             ensureActive()
             if (result.size >= MAX_LINES) break
-            val block = group.reduce(Box::union).expand(3, 3).clip(image.width, image.height)
-            read(block, comicBubbleFor(block, bubbles), false, retry = true)
-            // A block read can fail on very wide leading; then each proposed line gets its own attempt.
-            if (result.none { areaOverlap(it.box, block) >= .55f }) {
-                for (box in group) {
-                    val outer = box.expand(3, 3).clip(image.width, image.height)
-                    read(outer, comicBubbleFor(box, bubbles), false, retry = true)
-                }
+            val readings = mutableListOf<OcrLine>()
+            for (box in group) {
+                // A word cluster already inside a confirmed reading is the same ink, not a second sentence.
+                if (result.any { areaOverlap(it.box, box) >= .60 }) continue
+                val outer = box.expand(3, 3).clip(image.width, image.height)
+                read(outer, comicBubbleFor(box, bubbles), false, retry = true)?.let { readings += it }
             }
+            if (readings.size < 2) continue
+            // One balloon, one sentence: a single block is translated once and wiped as one, instead of leaving fragments.
+            val kept = mutableListOf<OcrLine>()
+            for (line in readings.sortedByDescending { it.confidence * it.text.length }) {
+                if (kept.none { areaOverlap(it.box, line.box) >= .60 }) kept += line
+            }
+            if (kept.size < 2) continue
+            result.removeAll(kept.toSet())
+            val block = kept.map { it.box }.reduce(Box::union)
+            val joined = kept.sortedBy { it.box.top }.joinToString(" ") { it.text.trim() }
+            mergeOcrLines(result, listOf(OcrLine(joined, block, emptyList(), id++, confidence = kept.minOf { it.confidence })))
         }
         val seen = baseline + result
         val recoveries = bubbles.mapNotNull { bubble ->
