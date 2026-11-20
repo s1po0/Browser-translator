@@ -42,6 +42,10 @@ jobs:
         run: |
           npm ci --prefix tools/browser-tests --ignore-scripts --no-audit --no-fund
           npm test --prefix tools/browser-tests
+      - name: Download comictextdetector.onnx
+        run: |
+          mkdir -p app/src/main/assets
+          curl -fsSL -L https://github.com/zyddnys/manga-image-translator/releases/download/beta-0.2.1/comictextdetector.pt.onnx -o app/src/main/assets/comictextdetector.onnx
       - name: Test and assemble debug APK
         run: tools/ci-gradle.sh :app:testDebugUnitTest :app:assembleDebug
       - name: Stage debug APK and check native OCR packaging
