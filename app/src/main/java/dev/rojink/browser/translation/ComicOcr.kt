@@ -20,9 +20,9 @@ internal class OnDeviceImageOcr(context: Context) : OcrProvider, AutoCloseable {
             if (hint.explicit != ENGLISH_COMIC_SCRIPT) throw e
             OcrPage(emptyList(), false, script = Script.LATIN)
         }
-        if (!useComicOcr(base, hint)) return base
+        val explicit = hint.explicit == ENGLISH_COMIC_SCRIPT
+        if (!useComicOcr(base, hint)) return recoverInkLines(image, base, hint, explicit)
         return withContext(Dispatchers.Default) {
-            val explicit = hint.explicit == ENGLISH_COMIC_SCRIPT
             val bubbles = comicBubbles(image)
             val found = try {
                 paddle.recognize(image, base.lines, if (hint.enhanced) bubbles else emptyList(),
@@ -37,6 +37,19 @@ internal class OnDeviceImageOcr(context: Context) : OcrProvider, AutoCloseable {
         }
     }
 
+    /** Only lettering the first reader left behind is retried, so ordinary pages cost one flat pass. */
+    private suspend fun recoverInkLines(image: Bitmap, base: OcrPage, hint: OcrHint, explicit: Boolean): OcrPage {
+        if (!hint.enhanced && !explicit) return base
+        return try {
+            val found = paddle.inkLines(image, base.lines, strict = !explicit)
+            if (found.isEmpty()) base else base.copy(
+                lines = reconcileComicOcr(base.lines, found, explicit, ComicSurface(image)::letteringSurface),
+            )
+        } catch (e: CancellationException) { throw e }
+        catch (_: Exception) { base }
+        catch (_: LinkageError) { base }
+    }
+
     override fun close() { paddle.close(); mlKit.close() }
 }
 
@@ -47,7 +60,20 @@ internal class ComicSurface(private val image: Bitmap, private val bubbles: List
     private fun similar(a: Int, b: Int) = Color.alpha(a) >= 245 && maxOf(abs(Color.red(a) - Color.red(b)), abs(Color.green(a) - Color.green(b)),
         abs(Color.blue(a) - Color.blue(b))) <= 27
 
-    fun letteringSurface(box: Box): Boolean = comicBubbleFor(box, bubbles) != null || borderReference(box) != null
+    fun letteringSurface(box: Box): Boolean =
+        comicBubbleFor(box, bubbles) != null || borderReference(box) != null || flatPaper(box)
+
+    /** Ink on plain paper: a burst outline can crowd the border samples, but the box's own gaps stay empty. */
+    private fun flatPaper(box: Box): Boolean {
+        val area = box.clip(image.width, image.height)
+        if (area.width < 5 || area.height < 5 || area.width * area.height > 120_000) return false
+        val luma = IntArray(area.width * area.height)
+        val colors = IntArray(luma.size)
+        image.getPixels(colors, 0, area.width, area.left, area.top, area.width, area.height)
+        for (i in colors.indices) luma[i] = (Color.luminance(colors[i]) * 255f).toInt()
+        luma.sort()
+        return luma[(luma.size * .65f).toInt()] >= 172 && luma.first() < 96
+    }
 
     private fun borderReference(box: Box): Int? {
         val dark = comicBubbleFor(box, bubbles)?.dark == true

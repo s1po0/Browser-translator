@@ -12,6 +12,7 @@ import android.graphics.ColorMatrix
 import android.graphics.ColorMatrixColorFilter
 import android.graphics.Paint
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
@@ -29,6 +30,7 @@ private const val MAX_LINES = 320
 private const val MAX_REFINEMENTS = 8
 private const val MAX_INK_CHECKS = 4
 private const val MAX_RESCANS = 5
+private const val MAX_INK_LINES = 20
 private const val REC_HEIGHT = 48
 
 /** Local PP-OCRv6 tiny; no model downloads, OCR service, or disk copies of image/text. */
@@ -42,94 +44,18 @@ internal class PaddleComicOcr(private val context: Context) : AutoCloseable {
     private var model: Model? = null
     private val comicDetector by lazy { ComicTextDetector(context) }
 
-    suspend fun recognize(
-        image: Bitmap, baseline: List<OcrLine> = emptyList(), bubbles: List<ComicBubble> = emptyList(), refine: Boolean = false,
-    ): List<OcrLine> = withContext(Dispatchers.Default) {
+    private suspend fun <T> withModel(fallback: T, block: suspend CoroutineScope.(Model) -> T): T = withContext(Dispatchers.Default) {
         gate.withLock {
             synchronized(life) {
-                if (closed || unavailable) return@withLock emptyList()
+                if (closed || unavailable) return@withLock fallback
                 busy = true
             }
             try {
                 val active = model ?: try { Model(context).also { model = it } }
                 catch (e: CancellationException) { throw e }
-                catch (_: Exception) { unavailable = true; return@withLock emptyList() }
-                catch (_: LinkageError) { unavailable = true; return@withLock emptyList() }
-                val result = mutableListOf<OcrLine>()
-                var budget = if (refine) MAX_REFINEMENTS else 0
-                var inkBudget = MAX_INK_CHECKS
-                val surface by lazy { ComicSurface(image, bubbles) }
-                var id = 1_000_000
-                fun read(box: Box, region: ComicBubble?, recovered: Boolean, isolatedBand: Boolean = false, masked: Bitmap? = null) {
-                    if (result.size >= MAX_LINES || box.width < 6 || box.height < 5) return
-                    ensureActive()
-                    val raster = masked ?: image
-                    val local = if (masked != null) checkNotNull(region).bounds.let { box.moved(-it.left, -it.top) } else box
-                    val tiny = active.read(raster, local)
-                    if (isolatedBand && (tiny.confidence < .93f || !reliableEnglish(tiny.value))) return
-                    val base = baseline.firstOrNull { abs(it.box.y - box.y) < box.height * .45f && areaOverlap(it.box, box) > .69 }
-                    val needsReview = !isolatedBand && budget > 0 && needsLatinReview(tiny, base, region != null, recovered)
-                    var inkVerified = false
-                    val text = if (needsReview) {
-                        budget--
-                        val small = active.refine(raster, local)
-                        if (small != null) inkVerified = verifyLatinInk(tiny, small, base) {
-                            if (inkBudget <= 0) null else {
-                                inkBudget--
-                                val tight = paddedInkCrop(box, surface.inkBounds(box))
-                                val sample = tight?.moved(local.left - box.left, local.top - box.top) ?: local
-                                active.refine(raster, sample, narrow = tight == null)
-                            }
-                        }
-                        if (small != null && (inkVerified || preferLatinReview(tiny, small, base))) small else tiny
-                    } else tiny
-                    if (text.confidence >= if (recovered) .76f else .62f) {
-                        if (text.value.length in 1..280 && text.value.any(Char::isLetterOrDigit)) {
-                            val grounded = region?.takeIf { recovered && it.contour?.fits(box) == true }
-                            val reading = OcrLine(text.value, box, emptyList(), id++, confidence = text.confidence,
-                                bubbleRead = grounded, inkVerifiedLatin = inkVerified)
-                            val spilled = if (grounded != null) result.indexOfFirst { replacesSpilledLine(reading, it) } else -1
-                            if (spilled >= 0) result[spilled] = reading
-                            else if (result.none { it.bubbleRead != null && replacesSpilledLine(it, reading) }) mergeOcrLines(result, listOf(reading))
-                        }
-                    }
-                }
-                for (tile in ocrTiles(image.width, image.height)) {
-                    ensureActive()
-                    if (result.size >= MAX_LINES) break
-                    for (box in detectRegion(active, image, tile, false)) {
-                        if (result.size >= MAX_LINES) break
-                        read(box, comicBubbleFor(box, bubbles), false)
-                    }
-                }
-                val seen = baseline + result
-                val recoveries = bubbles.mapNotNull { bubble ->
-                    missedBubbleBands(bubble, seen).takeIf { it.isNotEmpty() }?.let { bubble to it }
-                }.sortedByDescending { it.second.size }.take(MAX_RESCANS)
-                for ((bubble, missed) in recoveries) {
-                    ensureActive()
-                    // Thin ink bands sometimes already isolate one complete line, so try CTC before rerunning DB.
-                    missed.asSequence().filter { it.height <= 28 && it.width >= it.height * 2 }.take(3)
-                        .forEach { read(it, bubble, true, isolatedBand = true) }
-                    val remaining = missedBubbleBands(bubble, baseline + result)
-                    if (remaining.isEmpty()) continue
-                    val area = bubble.bounds
-                    val contour = bubble.contour
-                    val masked = contour?.maskedCrop(image, area)
-                    try {
-                        val detected = if (masked != null) active.detect(masked, true).map { it.moved(area.left, area.top) }
-                            else detectRegion(active, image, area, true, invert = bubble.dark)
-                        val proposals = detected.filter { box ->
-                            (masked == null || contour?.containsInk(box) == true) && remaining.any { band ->
-                                abs(box.y - band.y) <= maxOf(box.height, band.height) * .68f && areaOverlap(box, band) > .30
-                            }
-                        }.take(12)
-                        for (box in proposals) read(box, bubble, true, masked = masked)
-                    } finally { masked?.recycle() }
-                    // Some tiny lines never cross the DB threshold, even at crop scale. Try only the isolated ink bands.
-                    missedBubbleBands(bubble, baseline + result).take(6).forEach { box -> read(box, bubble, true) }
-                }
-                result
+                catch (_: Exception) { unavailable = true; return@withLock fallback }
+                catch (_: LinkageError) { unavailable = true; return@withLock fallback }
+                block(active)
             } finally {
                 val retired = synchronized(life) {
                     busy = false
@@ -138,6 +64,118 @@ internal class PaddleComicOcr(private val context: Context) : AutoCloseable {
                 retired?.close()
             }
         }
+    }
+
+    /** Cheap second opinion for lettering on flat paper that the line models skipped entirely. */
+    suspend fun inkLines(image: Bitmap, baseline: List<OcrLine>, strict: Boolean): List<OcrLine> = withModel(emptyList()) { active ->
+        val boxes = comicTextLines(image).filter { box -> baseline.none { areaOverlap(it.box, box) >= .70 } }
+        // A document already read line by line gains nothing here; a comic window whose dialogue was skipped gains everything.
+        if (boxes.isEmpty() || strict && boxes.size < maxOf(2, baseline.size)) return@withModel emptyList()
+        val result = mutableListOf<OcrLine>()
+        var id = 2_000_000
+        for (box in boxes.take(MAX_INK_LINES)) {
+            ensureActive()
+            val outer = box.expand(3, 3).clip(image.width, image.height)
+            val first = active.read(image, outer)
+            val text = if (first.confidence >= .62f && englishLettering(first.value)) first else
+                active.refine(image, outer)?.takeIf { it.confidence >= .62f && englishLettering(it.value) } ?: continue
+            if (text.value.length in 1..280 && text.value.any(Char::isLetterOrDigit)) {
+                result += OcrLine(text.value, outer, emptyList(), id++, confidence = text.confidence)
+            }
+        }
+        result
+    }
+
+    suspend fun recognize(
+        image: Bitmap, baseline: List<OcrLine> = emptyList(), bubbles: List<ComicBubble> = emptyList(), refine: Boolean = false,
+    ): List<OcrLine> = withModel(emptyList()) { active ->
+        val result = mutableListOf<OcrLine>()
+        var budget = if (refine) MAX_REFINEMENTS else 0
+        var inkBudget = MAX_INK_CHECKS
+        val surface by lazy { ComicSurface(image, bubbles) }
+        var id = 1_000_000
+        fun read(box: Box, region: ComicBubble?, recovered: Boolean, isolatedBand: Boolean = false, masked: Bitmap? = null, retry: Boolean = false) {
+            if (result.size >= MAX_LINES || box.width < 6 || box.height < 5) return
+            ensureActive()
+            val raster = masked ?: image
+            val local = if (masked != null) checkNotNull(region).bounds.let { box.moved(-it.left, -it.top) } else box
+            val first = active.read(raster, local)
+            // Stylized lettering often lands under the tiny model's floor; the latin reader is the second opinion.
+            val tiny = if (retry && first.confidence < .62f) {
+                active.refine(raster, local)?.takeIf { it.confidence >= .62f && englishLettering(it.value) } ?: first
+            } else first
+            if (isolatedBand && (tiny.confidence < .93f || !reliableEnglish(tiny.value))) return
+            val base = baseline.firstOrNull { abs(it.box.y - box.y) < box.height * .45f && areaOverlap(it.box, box) > .69 }
+            val needsReview = !isolatedBand && budget > 0 && needsLatinReview(tiny, base, region != null, recovered)
+            var inkVerified = false
+            val text = if (needsReview) {
+                budget--
+                val small = active.refine(raster, local)
+                if (small != null) inkVerified = verifyLatinInk(tiny, small, base) {
+                    if (inkBudget <= 0) null else {
+                        inkBudget--
+                        val tight = paddedInkCrop(box, surface.inkBounds(box))
+                        val sample = tight?.moved(local.left - box.left, local.top - box.top) ?: local
+                        active.refine(raster, sample, narrow = tight == null)
+                    }
+                }
+                if (small != null && (inkVerified || preferLatinReview(tiny, small, base))) small else tiny
+            } else tiny
+            if (text.confidence >= if (recovered) .76f else .62f) {
+                if (text.value.length in 1..280 && text.value.any(Char::isLetterOrDigit)) {
+                    val grounded = region?.takeIf { recovered && it.contour?.fits(box) == true }
+                    val reading = OcrLine(text.value, box, emptyList(), id++, confidence = text.confidence,
+                        bubbleRead = grounded, inkVerifiedLatin = inkVerified)
+                    val spilled = if (grounded != null) result.indexOfFirst { replacesSpilledLine(reading, it) } else -1
+                    if (spilled >= 0) result[spilled] = reading
+                    else if (result.none { it.bubbleRead != null && replacesSpilledLine(it, reading) }) mergeOcrLines(result, listOf(reading))
+                }
+            }
+        }
+        for (tile in ocrTiles(image.width, image.height)) {
+            ensureActive()
+            if (result.size >= MAX_LINES) break
+            for (box in detectRegion(active, image, tile, false)) {
+                if (result.size >= MAX_LINES) break
+                read(box, comicBubbleFor(box, bubbles), false)
+            }
+        }
+        // Handwritten lettering in burst or open bubbles: the ink proposes the line, the reader confirms it.
+        for (box in comicTextLines(image)) {
+            ensureActive()
+            if (result.size >= MAX_LINES) break
+            if (baseline.any { areaOverlap(it.box, box) >= .70 }) continue
+            if (result.any { areaOverlap(it.box, box) >= .70 }) continue
+            read(box.expand(3, 3).clip(image.width, image.height), comicBubbleFor(box, bubbles), false, retry = true)
+        }
+        val seen = baseline + result
+        val recoveries = bubbles.mapNotNull { bubble ->
+            missedBubbleBands(bubble, seen).takeIf { it.isNotEmpty() }?.let { bubble to it }
+        }.sortedByDescending { it.second.size }.take(MAX_RESCANS)
+        for ((bubble, missed) in recoveries) {
+            ensureActive()
+            // Thin ink bands sometimes already isolate one complete line, so try CTC before rerunning DB.
+            missed.asSequence().filter { it.height <= 28 && it.width >= it.height * 2 }.take(3)
+                .forEach { read(it, bubble, true, isolatedBand = true) }
+            val remaining = missedBubbleBands(bubble, baseline + result)
+            if (remaining.isEmpty()) continue
+            val area = bubble.bounds
+            val contour = bubble.contour
+            val masked = contour?.maskedCrop(image, area)
+            try {
+                val detected = if (masked != null) active.detect(masked, true).map { it.moved(area.left, area.top) }
+                    else detectRegion(active, image, area, true, invert = bubble.dark)
+                val proposals = detected.filter { box ->
+                    (masked == null || contour?.containsInk(box) == true) && remaining.any { band ->
+                        abs(box.y - band.y) <= maxOf(box.height, band.height) * .68f && areaOverlap(box, band) > .30
+                    }
+                }.take(12)
+                for (box in proposals) read(box, bubble, true, masked = masked)
+            } finally { masked?.recycle() }
+            // Some tiny lines never cross the DB threshold, even at crop scale. Try only the isolated ink bands.
+            missedBubbleBands(bubble, baseline + result).take(6).forEach { box -> read(box, bubble, true) }
+        }
+        result
     }
 
     private fun detectRegion(active: Model, image: Bitmap, area: Box, recover: Boolean, invert: Boolean = false): List<Box> {
