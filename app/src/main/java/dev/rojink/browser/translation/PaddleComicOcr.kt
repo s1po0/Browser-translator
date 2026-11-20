@@ -97,15 +97,7 @@ internal class PaddleComicOcr(private val context: Context) : AutoCloseable {
                 for (tile in ocrTiles(image.width, image.height)) {
                     ensureActive()
                     if (result.size >= MAX_LINES) break
-                    val tileBoxes = detectRegion(active, image, tile, false)
-                    val extraBoxes = if (comicDetector.available) {
-                        val tileCrop = Bitmap.createBitmap(image, tile.left, tile.top, tile.width, tile.height)
-                        try {
-                            comicDetector.detect(tileCrop).map { it.moved(tile.left, tile.top) }
-                                .filter { b -> tileBoxes.none { areaOverlap(it, b) > .30 } }
-                        } finally { tileCrop.recycle() }
-                    } else emptyList()
-                    for (box in tileBoxes + extraBoxes) {
+                    for (box in detectRegion(active, image, tile, false)) {
                         if (result.size >= MAX_LINES) break
                         read(box, comicBubbleFor(box, bubbles), false)
                     }
