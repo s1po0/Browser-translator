@@ -126,7 +126,7 @@ internal class PaddleComicOcr(private val context: Context) : AutoCloseable {
                         for (box in proposals) read(box, bubble, true, masked = masked)
                     } finally { masked?.recycle() }
                     // Some tiny lines never cross the DB threshold, even at crop scale. Try only the isolated ink bands.
-                    missedBubbleBands(bubble, baseline + result).take(3).forEach { box -> read(box, bubble, true) }
+                    missedBubbleBands(bubble, baseline + result).take(6).forEach { box -> read(box, bubble, true) }
                 }
                 result
             } finally {
