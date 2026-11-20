@@ -152,6 +152,7 @@ internal class PaddleComicOcr(private val context: Context) : AutoCloseable {
             if (!busy) model.also { model = null } else null
         }
         retired?.close()
+        comicDetector.close()
     }
 
     private class Model(private val context: Context) : AutoCloseable {
