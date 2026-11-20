@@ -40,6 +40,7 @@ internal class PaddleComicOcr(private val context: Context) : AutoCloseable {
     private var unavailable = false
     // Session ownership is serialized by gate; close defers destruction until the current call releases it.
     private var model: Model? = null
+    private val comicDetector by lazy { ComicTextDetector(context) }
 
     suspend fun recognize(
         image: Bitmap, baseline: List<OcrLine> = emptyList(), bubbles: List<ComicBubble> = emptyList(), refine: Boolean = false,
