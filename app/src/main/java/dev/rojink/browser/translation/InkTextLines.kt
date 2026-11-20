@@ -87,7 +87,7 @@ internal fun inkLineBoxes(mean: IntArray, low: IntArray, w: Int, h: Int): List<B
             total++
             if (mean[y * w + x] >= PAPER_TONE) lit++
         }
-        if (total == 0 || lit * 100 < total * 55) continue
+        if (total == 0 || lit * 100 < total * 45) continue
         result += line
     }
     return result.sortedWith(compareBy<Box> { it.top }.thenBy { it.left })

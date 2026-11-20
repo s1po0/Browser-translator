@@ -8,6 +8,7 @@ import android.app.ActivityManager
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.ColorMatrix
 import android.graphics.ColorMatrixColorFilter
 import android.graphics.Paint
@@ -73,15 +74,19 @@ internal class PaddleComicOcr(private val context: Context) : AutoCloseable {
         if (boxes.isEmpty() || strict && boxes.size < maxOf(2, baseline.size)) return@withModel emptyList()
         val result = mutableListOf<OcrLine>()
         var id = 2_000_000
-        for (box in boxes.take(MAX_INK_LINES)) {
-            ensureActive()
-            val outer = box.expand(3, 3).clip(image.width, image.height)
+        fun settle(outer: Box): OcrLine? {
             val first = active.read(image, outer)
             val text = if (first.confidence >= .62f && englishLettering(first.value)) first else
-                active.refine(image, outer)?.takeIf { it.confidence >= .62f && englishLettering(it.value) } ?: continue
-            if (text.value.length in 1..280 && text.value.any(Char::isLetterOrDigit)) {
-                result += OcrLine(text.value, outer, emptyList(), id++, confidence = text.confidence)
-            }
+                active.refine(image, outer)?.takeIf { it.confidence >= .62f && englishLettering(it.value) } ?: return null
+            if (text.value.length !in 1..280 || text.value.none(Char::isLetterOrDigit)) return null
+            return OcrLine(text.value, outer, emptyList(), id++, confidence = text.confidence)
+        }
+        for (group in inkGroups(image, boxes.take(MAX_INK_LINES))) {
+            ensureActive()
+            if (result.size >= 8) break
+            val whole = settle(group.reduce(Box::union).expand(3, 3).clip(image.width, image.height))
+            if (whole != null) result += whole
+            else for (box in group) settle(box.expand(3, 3).clip(image.width, image.height))?.let { result += it }
         }
         result
     }
@@ -140,13 +145,20 @@ internal class PaddleComicOcr(private val context: Context) : AutoCloseable {
                 read(box, comicBubbleFor(box, bubbles), false)
             }
         }
-        // Handwritten lettering in burst or open bubbles: the ink proposes the line, the reader confirms it.
-        for (box in comicTextLines(image)) {
+        // Handwritten lettering in burst or open bubbles: the ink proposes the block, the reader confirms the lines.
+        val leftovers = comicTextLines(image).filter { box -> baseline.none { areaOverlap(it.box, box) >= .70 } }
+        for (group in inkGroups(image, leftovers)) {
             ensureActive()
             if (result.size >= MAX_LINES) break
-            if (baseline.any { areaOverlap(it.box, box) >= .70 }) continue
-            if (result.any { areaOverlap(it.box, box) >= .70 }) continue
-            read(box.expand(3, 3).clip(image.width, image.height), comicBubbleFor(box, bubbles), false, retry = true)
+            val block = group.reduce(Box::union).expand(3, 3).clip(image.width, image.height)
+            read(block, comicBubbleFor(block, bubbles), false, retry = true)
+            // A block read can fail on very wide leading; then each proposed line gets its own attempt.
+            if (result.none { areaOverlap(it.box, block) >= .55f }) {
+                for (box in group) {
+                    val outer = box.expand(3, 3).clip(image.width, image.height)
+                    read(outer, comicBubbleFor(box, bubbles), false, retry = true)
+                }
+            }
         }
         val seen = baseline + result
         val recoveries = bubbles.mapNotNull { bubble ->
@@ -176,6 +188,33 @@ internal class PaddleComicOcr(private val context: Context) : AutoCloseable {
             missedBubbleBands(bubble, baseline + result).take(6).forEach { box -> read(box, bubble, true) }
         }
         result
+    }
+
+    /** Tightly led lettering inside one flat interior reads as one block, so it is replaced as one block. */
+    private fun inkGroups(image: Bitmap, boxes: List<Box>): List<List<Box>> {
+        val groups = mutableListOf<MutableList<Box>>()
+        for (box in boxes) {
+            val group = groups.lastOrNull()
+            val last = group?.lastOrNull()
+            val joined = group != null && last != null && box.top - last.bottom in 0..(last.height * .40f).toInt() &&
+                minOf(box.right, last.right) - maxOf(box.left, last.left) >= minOf(box.width, last.width) * .25f &&
+                paperBetween(image, last, box)
+            if (joined) group!! += box else groups += mutableListOf(box)
+        }
+        return groups
+    }
+
+    /** A bubble outline or panel rule between two lines is a reason not to join them. */
+    private fun paperBetween(image: Bitmap, first: Box, second: Box): Boolean {
+        val top = first.bottom.coerceAtMost(second.bottom)
+        val bottom = second.top.coerceAtLeast(first.top)
+        if (bottom - top < 1) return true
+        val left = maxOf(first.left, second.left)
+        val right = minOf(first.right, second.right)
+        if (right - left < 4) return false
+        val pixels = IntArray((right - left) * (bottom - top))
+        image.getPixels(pixels, 0, right - left, left, top, right - left, bottom - top)
+        return pixels.count { minOf(Color.red(it), Color.green(it), Color.blue(it)) >= 172 } * 100 >= pixels.size * 78
     }
 
     private fun detectRegion(active: Model, image: Bitmap, area: Box, recover: Boolean, invert: Boolean = false): List<Box> {
