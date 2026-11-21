@@ -1,3 +1,6 @@
 -rw-r--r-- 1 runner runner 142964 Nov 21 04:46 /tmp/page.webp
 https://lens.google.com/v3/upload?hl=en -> 303 size=0
 https://lens.google.com/upload?ep=ccm&hl=en -> 302 size=0
+-rw-r--r-- 1 runner runner 142964 Nov 21 04:47 /tmp/page.webp
+redirect: https://www.google.com/search?vsrid=CMiIod_lyaXLWxACGAEiJGRiNTcxMGJmLTZmZTEtNDgwZi1iMGVhLWEwYzc5MjI3NTAwOTKBASICcncoIUJzCi5sZmUtZHVtbXk6NDkyNThhMjEtMWE4Ny00NGY1LTg2MmYtYTg0MjczMDgwN2IyEkEKPy9ibnMvcncvYm9yZy9ydy9ibnMvbGVucy1mcm9udGVuZC1hcGkvcHJvZC5sZW5zLWZyb250ZW5kLWFwaS82MloECgJydzilgJjroJiYAw&vsint=CAIqDAoCCAcSAggKGAEgATojChYNAAAAPxUAAAA_HQAAgD8lAACAPzABEIQHGPYLJQAAgD8&udm=26&lns_mode=un&source=lns.web.ukn&vsdim=900,1526&gsessionid=8_OZdCg14d078B4ySUZchy0EnaXYxHmnsPMIjJDAc_dpI4eAaDFKNA&lsessionid=sIHg9vainL2TythrQKONLQG-PbV1aejgxKkPAlI57Bm2lyLvmjlJUA&lns_surface=26&hl=en
+result size=93876
