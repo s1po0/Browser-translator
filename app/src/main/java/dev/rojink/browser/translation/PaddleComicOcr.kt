@@ -33,6 +33,7 @@ private const val MAX_INK_CHECKS = 4
 private const val MAX_RESCANS = 5
 private const val MAX_INK_LINES = 20
 private const val MAX_LIGHT_LINES = 12
+private const val MAX_UPSCALE_READS = 6
 private const val REC_HEIGHT = 48
 
 /** Local PP-OCRv6 tiny; no model downloads, OCR service, or disk copies of image/text. */
@@ -105,6 +106,7 @@ internal class PaddleComicOcr(private val context: Context) : AutoCloseable {
         val result = mutableListOf<OcrLine>()
         var budget = if (refine) MAX_REFINEMENTS else 0
         var inkBudget = MAX_INK_CHECKS
+        var upscaleBudget = MAX_UPSCALE_READS
         val surface by lazy { ComicSurface(image, bubbles) }
         var id = 1_000_000
         fun read(box: Box, region: ComicBubble?, recovered: Boolean, isolatedBand: Boolean = false, masked: Bitmap? = null, retry: Boolean = false): OcrLine? {
@@ -143,6 +145,29 @@ internal class PaddleComicOcr(private val context: Context) : AutoCloseable {
                     if (spilled >= 0) result[spilled] = reading
                     else if (result.none { it.bubbleRead != null && replacesSpilledLine(it, reading) }) mergeOcrLines(result, listOf(reading))
                     return reading
+                }
+            }
+            // Both readers work at a 48 px stroke height, so lettering drawn small loses the detail before it is seen.
+            // A 2x crop of the few lines that failed gives the recogniser the strokes back, once, cheaply.
+            if (masked == null && !isolatedBand && upscaleBudget > 0 && box.height in 6..64) {
+                val pad = box.expand(4, 4).clip(image.width, image.height)
+                if (pad.width >= 8 && pad.height >= 6 && pad.width <= 900) {
+                    val crop = try { Bitmap.createBitmap(image, pad.left, pad.top, pad.width, pad.height) } catch (_: IllegalArgumentException) { null }
+                    if (crop != null) {
+                        upscaleBudget--
+                        val big = Bitmap.createScaledBitmap(crop, pad.width * 2, pad.height * 2, true)
+                        if (big !== crop) crop.recycle()
+                        try {
+                            val scaled = pad.moved(-pad.left, -pad.top).let { Box(it.left * 2, it.top * 2, it.right * 2, it.bottom * 2) }
+                            val second = active.refine(big, scaled)?.takeIf { it.confidence >= .62f && englishLettering(it.value) }
+                            if (second != null && second.value.length in 1..280) {
+                                val reading = OcrLine(second.value, box, emptyList(), id++, confidence = second.confidence,
+                                    bubbleRead = region?.takeIf { it.dark || recovered })
+                                mergeOcrLines(result, listOf(reading))
+                                return reading
+                            }
+                        } finally { big.recycle() }
+                    }
                 }
             }
             return null
