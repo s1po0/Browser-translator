@@ -22,6 +22,12 @@ internal class OnDeviceImageOcr(context: Context) : OcrProvider, AutoCloseable {
             OcrPage(emptyList(), false, script = Script.LATIN)
         }
         val explicit = hint.explicit == ENGLISH_COMIC_SCRIPT
+        // English comics: one plain ML Kit block reading, exactly the path the Kurd-man desktop app proved.
+        // The tuned passes stay for other scripts and for pages whose language is still open.
+        if (explicit) return withContext(Dispatchers.Default) {
+            val bubbles = try { comicBubbles(image) } catch (_: Exception) { emptyList() } catch (_: LinkageError) { emptyList() }
+            base.copy(comic = true, bubbles = bubbles)
+        }
         if (!useComicOcr(base, hint)) return recoverInkLines(image, base, hint, explicit)
         return withContext(Dispatchers.Default) {
             val bubbles = comicBubbles(image)
