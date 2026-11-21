@@ -100,8 +100,11 @@ private fun scanCell(labels: IntArray, low: IntArray, index: Int, tag: Int, stac
     return end + 1
 }
 
-/** Sampled tone raster keeps the scan cheap on tall strips; boxes map back to source pixels. */
-internal fun comicTextLines(bitmap: Bitmap): List<Box> {
+/**
+ * Sampled tone raster keeps the scan cheap on tall strips; boxes map back to source pixels.
+ * `inverted` reads light lettering on a dark burst or panel, which the dark-on-paper scan cannot see.
+ */
+internal fun comicTextLines(bitmap: Bitmap, inverted: Boolean = false): List<Box> {
     if (bitmap.width < 40 || bitmap.height < 40) return emptyList()
     val step = ceil(sqrt(bitmap.width.toDouble() * bitmap.height / 700_000)).toInt().coerceAtLeast(1)
     val w = (bitmap.width + step - 1) / step
@@ -125,7 +128,8 @@ internal fun comicTextLines(bitmap: Bitmap): List<Box> {
                 for (px in start until end) {
                     val p = rows[row + px]
                     if (p ushr 24 < 240) continue
-                    val shade = (54 * ((p shr 16) and 255) + 183 * ((p shr 8) and 255) + 19 * (p and 255)) shr 8
+                    val tone = (54 * ((p shr 16) and 255) + 183 * ((p shr 8) and 255) + 19 * (p and 255)) shr 8
+                    val shade = if (inverted) 255 - tone else tone
                     n++
                     sum += shade
                     if (shade < lo) lo = shade

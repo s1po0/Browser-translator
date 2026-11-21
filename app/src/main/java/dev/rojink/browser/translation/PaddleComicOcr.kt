@@ -32,6 +32,7 @@ private const val MAX_REFINEMENTS = 8
 private const val MAX_INK_CHECKS = 4
 private const val MAX_RESCANS = 5
 private const val MAX_INK_LINES = 20
+private const val MAX_LIGHT_LINES = 12
 private const val REC_HEIGHT = 48
 
 /** Local PP-OCRv6 tiny; no model downloads, OCR service, or disk copies of image/text. */
@@ -178,6 +179,41 @@ internal class PaddleComicOcr(private val context: Context) : AutoCloseable {
             val joined = kept.sortedBy { it.box.top }.joinToString(" ") { it.text.trim() }
             mergeOcrLines(result, listOf(OcrLine(joined, block, emptyList(), id++, confidence = kept.minOf { it.confidence })))
         }
+        // A burst balloon often prints white lettering on black; the paper scan is blind to it, so invert the tones.
+        val lightLeftovers = comicTextLines(image, inverted = true).filter { box -> baseline.none { areaOverlap(it.box, box) >= .70 } }
+        var lightReads = 0
+        for (group in inkGroups(image, lightLeftovers, dark = true)) {
+            ensureActive()
+            if (result.size >= MAX_LINES || lightReads >= MAX_LIGHT_LINES) break
+            val readings = mutableListOf<OcrLine>()
+            for (box in group) {
+                if (result.any { areaOverlap(it.box, box) >= .60 }) continue
+                val area = box.expand(3, 3).clip(image.width, image.height)
+                val region = comicBubbleFor(box, bubbles) ?: bubbles.firstOrNull { it.dark && it.bounds.overlaps(box) }
+                if (lightReads >= MAX_LIGHT_LINES) break
+                val crop = try { Bitmap.createBitmap(image, area.left, area.top, area.width, area.height).invertedCopy() }
+                catch (_: IllegalArgumentException) { null } ?: continue
+                lightReads++
+                try {
+                    val local = area.moved(-area.left, -area.top)
+                    val first = active.read(crop, local)
+                    val text = if (first.confidence >= .62f && englishLettering(first.value)) first
+                        else active.refine(crop, local)?.takeIf { it.confidence >= .62f && englishLettering(it.value) } ?: continue
+                    readings += OcrLine(text.value, area, emptyList(), id++, confidence = text.confidence,
+                        bubbleRead = region?.takeIf { it.dark })
+                } finally { crop.recycle() }
+            }
+            if (readings.isEmpty()) continue
+            val kept = mutableListOf<OcrLine>()
+            for (line in readings.sortedByDescending { it.confidence * it.text.length }) {
+                if (kept.none { areaOverlap(it.box, line.box) >= .60 }) kept += line
+            }
+            result.removeAll(kept.toSet())
+            if (kept.size == 1) { mergeOcrLines(result, kept); continue }
+            val block = kept.map { it.box }.reduce(Box::union)
+            mergeOcrLines(result, listOf(OcrLine(kept.sortedBy { it.box.top }.joinToString(" ") { it.text.trim() }, block,
+                emptyList(), id++, confidence = kept.minOf { it.confidence })))
+        }
         val seen = baseline + result
         val recoveries = bubbles.mapNotNull { bubble ->
             missedBubbleBands(bubble, seen).takeIf { it.isNotEmpty() }?.let { bubble to it }
@@ -209,21 +245,21 @@ internal class PaddleComicOcr(private val context: Context) : AutoCloseable {
     }
 
     /** Tightly led lettering inside one flat interior reads as one block, so it is replaced as one block. */
-    private fun inkGroups(image: Bitmap, boxes: List<Box>): List<List<Box>> {
+    private fun inkGroups(image: Bitmap, boxes: List<Box>, dark: Boolean = false): List<List<Box>> {
         val groups = mutableListOf<MutableList<Box>>()
         for (box in boxes) {
             val group = groups.lastOrNull()
             val last = group?.lastOrNull()
             val joined = group != null && last != null && box.top - last.bottom in 0..(last.height * .40f).toInt() &&
                 minOf(box.right, last.right) - maxOf(box.left, last.left) >= minOf(box.width, last.width) * .25f &&
-                paperBetween(image, last, box)
+                paperBetween(image, last, box, dark)
             if (joined) group!! += box else groups += mutableListOf(box)
         }
         return groups
     }
 
     /** A bubble outline or panel rule between two lines is a reason not to join them. */
-    private fun paperBetween(image: Bitmap, first: Box, second: Box): Boolean {
+    private fun paperBetween(image: Bitmap, first: Box, second: Box, dark: Boolean = false): Boolean {
         val top = first.bottom.coerceAtMost(second.bottom)
         val bottom = second.top.coerceAtLeast(first.top)
         if (bottom - top < 1) return true
@@ -232,7 +268,8 @@ internal class PaddleComicOcr(private val context: Context) : AutoCloseable {
         if (right - left < 4) return false
         val pixels = IntArray((right - left) * (bottom - top))
         image.getPixels(pixels, 0, right - left, left, top, right - left, bottom - top)
-        return pixels.count { minOf(Color.red(it), Color.green(it), Color.blue(it)) >= 172 } * 100 >= pixels.size * 78
+        val flat = pixels.count { minOf(Color.red(it), Color.green(it), Color.blue(it)) >= 172 }
+        return if (dark) flat * 100 <= pixels.size * 22 else flat * 100 >= pixels.size * 78
     }
 
     private fun detectRegion(active: Model, image: Bitmap, area: Box, recover: Boolean, invert: Boolean = false): List<Box> {
