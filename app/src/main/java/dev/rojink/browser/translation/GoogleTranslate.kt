@@ -41,6 +41,8 @@ private val cooldownUntil = AtomicLong(0)
 private val codePattern = Regex("[a-zA-Z0-9-]{2,24}")
 private val freeEndpoint = "https://translate.googleapis.com/translate_a/single".toHttpUrl()
 private val cloudEndpoint = "https://translation.googleapis.com/language/translate/v2".toHttpUrl()
+private val myMemoryEndpoint = "https://api.mymemory.translated.net/get".toHttpUrl()
+private const val MAX_FALLBACK_TEXTS = 24
 internal val jsonMediaType = "application/json; charset=utf-8".toMediaType()
 
 /** Free gtx is intentionally replaceable; neither transport logs text or credentials. */
@@ -57,12 +59,25 @@ class GoogleTranslateProvider internal constructor(
         if (source.equals(target, true)) return@withContext texts
         val distinct = texts.filter(String::isNotBlank).distinct().associateWith { splitLong(it, 3400) }
         val translated = HashMap<String, String>()
-        for (chunk in batches(distinct.values.flatten().distinct(), 3800, if (key == null) 14 else 50)) {
-            val output = if (key == null) freeBatch(chunk, source, target) else official(chunk, source, target)
-            if (output.size != chunk.size) throw ResponseFailure()
-            chunk.zip(output).forEach { (a, b) -> translated[a] = b }
+        val whole = HashMap<String, String>()
+        val failure = runCatching {
+            for (chunk in batches(distinct.values.flatten().distinct(), 3800, if (key == null) 14 else 50)) {
+                val output = if (key == null) freeBatch(chunk, source, target) else official(chunk, source, target)
+                if (output.size != chunk.size) throw ResponseFailure()
+                chunk.zip(output).forEach { (a, b) -> translated[a] = b }
+            }
+        }.exceptionOrNull()
+        // The free gtx endpoint refuses a whole batch now and then; MyMemory keeps the page translated without a key.
+        if (failure != null && key == null && gtx.host.endsWith("googleapis.com")) {
+            val pending = distinct.keys.filter { text -> distinct.getValue(text).any { it !in translated } }.take(MAX_FALLBACK_TEXTS)
+            for (text in pending) {
+                val value = runCatching { myMemoryOne(text, source, target) }.getOrNull() ?: continue
+                if (value.isNotBlank()) whole[text] = value
+            }
         }
-        texts.map { text -> distinct[text]?.joinToString(" ") { part -> translated[part] ?: throw ResponseFailure() } ?: text }
+        texts.map { text ->
+            whole[text] ?: distinct[text]?.joinToString(" ") { part -> translated[part] ?: throw (failure ?: ResponseFailure()) } ?: text
+        }
     }
 
     private suspend fun official(texts: List<String>, source: String, target: String): List<String> {
@@ -88,6 +103,14 @@ class GoogleTranslateProvider internal constructor(
         return coroutineScope {
             texts.map { text -> async { freeOne(text, source, target) } }.map { it.await() }
         }
+    }
+
+    private suspend fun myMemoryOne(text: String, source: String, target: String): String {
+        val url = myMemoryEndpoint.newBuilder().addQueryParameter("q", text)
+            .addQueryParameter("langpair", "$source|$target").build()
+        val json = send(Request.Builder().url(url).build())
+        val raw = JSONObject(json).optJSONObject("responseData")?.optString("translatedText").orEmpty()
+        return Parser.unescapeEntities(raw, false).takeIf { it.isNotBlank() } ?: throw ResponseFailure()
     }
 
     private suspend fun freeOne(text: String, source: String, target: String): String {

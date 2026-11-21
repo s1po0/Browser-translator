@@ -125,3 +125,22 @@ box mAP@.5 = **٠٫٩٧٥**، mask mAP@.5 = **٠٫٩٧٠**.
 | ١٠ | وەرگێڕانی ئینگلیزی → کوردی بێ کلیل | `GoogleTranslate.kt` | ✅ |
 
 هەروەها `ComicTextDetector.kt` (کۆدی مردوو، مۆدێلەکە لە ئەپدا نەبوو) سڕایەوە.
+
+---
+
+## ٩. ئەوەی لە [`s1po0/Kurd-man`](https://github.com/s1po0/Kurd-man) ەوە هێنرایە ئێرە
+
+پڕۆژەی `Kurd-man` هەمان بیرۆکەی هەیە بەڵام بۆ کۆمپیوتەر (Python + Tesseract).
+ئەو شتانەی کە بە سوودی خۆمان بوون و ئێستا لە ئەپدا هەن:
+
+| بیرۆکە لە Kurd-man | جێبەجێکردن لە ئێمە |
+|---|---|
+| `_ocr_uncovered_bubbles`: هەر باڵۆنێک کە OCR ی گەورە لەدەستی داوە، بە جیا دەبڕدرێت، دەرەوەی کۆنتورەکە سپی دەکرێت، ٢–٣× گەورە دەکرێت، پاشان دەخوێندرێتەوە | `PaddleComicOcr` → قۆناغی `deep` (`MAX_DEEP_BUBBLES`) بە `ComicContour.maskedCrop` + `createScaledBitmap` |
+| `_detect_bubble_candidates` + `_point_in_contour` (دەق دەبێت لەناو شێوەی باڵۆن بێت) | `ComicContour.containsInk` پشکنین لەسەر هەر دێڕێکی قۆناغی deep |
+| زنجیرەی وەرگێڕەران: Google → MyMemory (کاتێک یەکەم شکست دەهێنێت) | `GoogleTranslateProvider` → `myMemoryOne` وەک یەدەگ |
+| `dedupe_words` / یەک باڵۆن = یەک پارچە | `mergeOcrLines` + `inkGroups` (پێشتر هەبوو) |
+| `shaping` تەنها بە یەک ڕێگا، فۆنتی ڕاستەقینەی عەرەبی، بێ □ | `TextPaint` + Rudaw/Noto (پێشتر هەبوو) |
+| Cache ی SQLite: هەر ڕستەیەک تەنها جارێک | `TextCache` + Room (پێشتر هەبوو) |
+
+ئەوەی هێشتا نەهاتووە: `NLLB` ی ئۆفلاین (٢.٥ گێگابایت — بۆ ئەندرۆید زۆر گەورەیە)، و `glossary.json`
+(دەتوانرێت دواتر زیاد بکرێت بۆ ناوی کەسایەتییەکان).

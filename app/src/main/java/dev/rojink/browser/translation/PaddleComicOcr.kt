@@ -24,6 +24,7 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.FloatBuffer
 import kotlin.math.abs
+import kotlin.math.roundToInt
 
 private const val ASSETS = "ocr/ppocrv6-tiny"
 private const val LATIN_ASSETS = "ocr/ppocrv6-small-latin"
@@ -34,6 +35,8 @@ private const val MAX_RESCANS = 5
 private const val MAX_INK_LINES = 20
 private const val MAX_LIGHT_LINES = 12
 private const val MAX_UPSCALE_READS = 6
+private const val MAX_DEEP_BUBBLES = 6
+private const val MAX_DEEP_LINES = 8
 private const val REC_HEIGHT = 48
 
 /** Local PP-OCRv6 tiny; no model downloads, OCR service, or disk copies of image/text. */
@@ -288,6 +291,58 @@ internal class PaddleComicOcr(private val context: Context) : AutoCloseable {
             } finally { masked?.recycle() }
             // Some tiny lines never cross the DB threshold, even at crop scale. Try only the isolated ink bands.
             missedBubbleBands(bubble, baseline + result).take(6).forEach { box -> read(box, bubble, true) }
+        }
+        // Last resort, borrowed from the desktop manhwa pipeline: enlarge the bubble body alone, masked to its
+        // printed outline, and let the line finder work on that crop. Lettering the page-scale scan cannot
+        // separate usually resolves once it is 2-3x bigger and the surrounding artwork is gone.
+        val deep = bubbles.filter { bubble ->
+            val side = bubble.bounds
+            side.width >= 40 && side.height >= 18 && side.width <= 760 && side.height <= 760 &&
+                (baseline + result).none { areaOverlap(it.box, side) >= .30 }
+        }.sortedByDescending { it.bounds.width * it.bounds.height }.take(MAX_DEEP_BUBBLES)
+        for (bubble in deep) {
+            ensureActive()
+            if (result.size >= MAX_LINES) break
+            val area = bubble.bounds
+            val body = bubble.contour?.maskedCrop(image, area) ?: runCatching {
+                Bitmap.createBitmap(image, area.left, area.top, area.width, area.height)
+            }.getOrNull() ?: continue
+            val factor = when {
+                area.width < 240 -> 3f
+                area.width < 420 -> 2.5f
+                else -> 2f
+            }
+            val big = runCatching {
+                Bitmap.createScaledBitmap(body, (body.width * factor).toInt().coerceAtLeast(1),
+                    (body.height * factor).toInt().coerceAtLeast(1), true)
+            }.getOrNull()
+            if (big == null) { body.recycle(); continue }
+            if (big !== body) body.recycle()
+            val found = mutableListOf<OcrLine>()
+            try {
+                for (box in comicTextLines(big).take(MAX_DEEP_LINES)) {
+                    val first = active.read(big, box)
+                    val text = if (first.confidence >= .66f && englishLettering(first.value)) first
+                        else active.refine(big, box)?.takeIf { it.confidence >= .66f && englishLettering(it.value) } ?: continue
+                    val full = Box(
+                        area.left + (box.left / factor).roundToInt(), area.top + (box.top / factor).roundToInt(),
+                        area.left + (box.right / factor).roundToInt(), area.top + (box.bottom / factor).roundToInt(),
+                    ).clip(image.width, image.height)
+                    if (full.width < 4 || full.height < 4) continue
+                    if (bubble.contour?.containsInk(full) == false) continue
+                    found += OcrLine(text.value, full, emptyList(), id++, confidence = text.confidence,
+                        bubbleRead = bubble, inkVerifiedLatin = true)
+                }
+            } finally { big.recycle() }
+            if (found.isEmpty()) continue
+            val kept = mutableListOf<OcrLine>()
+            for (line in found.sortedByDescending { it.confidence * it.text.length }) {
+                if (kept.none { areaOverlap(it.box, line.box) >= .60 }) kept += line
+            }
+            if (kept.size == 1) { mergeOcrLines(result, kept); continue }
+            val block = kept.map { it.box }.reduce(Box::union)
+            mergeOcrLines(result, listOf(OcrLine(kept.sortedBy { it.box.top }.joinToString(" ") { it.text.trim() }, block,
+                emptyList(), id++, confidence = kept.minOf { it.confidence }, bubbleRead = bubble, inkVerifiedLatin = true)))
         }
         result
     }
