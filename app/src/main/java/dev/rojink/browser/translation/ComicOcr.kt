@@ -45,6 +45,10 @@ internal class OnDeviceImageOcr(context: Context) : OcrProvider, AutoCloseable {
         }
     }
 
+    /** ML Kit alone, no comic passes: the plain block reader the Kurd-man desktop app proved on English manhwa. */
+    suspend fun plainLines(image: Bitmap, hint: OcrHint): List<OcrLine> =
+        mlKit.recognize(image, hint.copy(enhanced = false)).lines
+
     /** Only lettering the first reader left behind is retried, so ordinary pages cost one flat pass. */
     private suspend fun recoverInkLines(image: Bitmap, base: OcrPage, hint: OcrHint, explicit: Boolean): OcrPage {
         if (!hint.enhanced && !explicit) return base

@@ -206,17 +206,51 @@ internal class ImagePipeline(
                 val missed = comic && options.enhancedOcr && recognized.bubbles.any { missedBubbleBands(it, recognized.lines).isNotEmpty() }
                 layout to missed
             } }
-            if (layout.units.isEmpty()) return ImageFrame.Original(keptText = missed)
+            if (layout.units.isEmpty()) {
+                if (!comic) return ImageFrame.Original(keptText = missed)
+                // Nothing placed: fall back to the plain Kurd-man reading of the whole page.
+                val units = withContext(Dispatchers.Default) { plainManhwaUnits(onDevice, bitmap, hint) }
+                if (units.isEmpty()) return ImageFrame.Original(keptText = missed)
+                val plain = timed("translate") {
+                    translateImageWords(units, options.target, options.script, providers.imageTranslator, providers.imageRetry)
+                }
+                val placed = timed("paint") { withContext(Dispatchers.Default) {
+                    renderer.paint(bitmap, units, plain.map { it.take(2000) }, layout.protected, options.target, comic = false)
+                } }
+                if (placed == 0) return ImageFrame.Original(keptText = true, counts = textCounts(units, plain, placed))
+                display = true
+                return ImageFrame.Painted(bitmap, null, keptText = true, counts = textCounts(units, plain, placed))
+            }
             val translations = timed("translate") {
                 translateImageWords(layout.units, options.target, options.script, providers.imageTranslator, providers.imageRetry)
             }
+            val drawnAreas = mutableListOf<Box>()
+            val observer: (Box, PaintDecision) -> Unit = { box, decision ->
+                if (decision == PaintDecision.DRAWN) drawnAreas += box
+                paintDecision?.invoke(box, decision)
+            }
             val drawn = timed("paint") { withContext(Dispatchers.Default) {
                 renderer.paint(bitmap, layout.units, translations.map { it.take(2000) }, layout.protected, options.target, comic,
-                    recognized.bubbles, paintDecision)
+                    recognized.bubbles, observer)
             } }
-            val keptText = missed || drawn < layout.units.size
-            val counts = textCounts(layout.units, translations, drawn)
-            if (drawn == 0) return ImageFrame.Original(keptText, counts)
+            // Whatever the tuned pipeline left in English is read once more the plain way and placed, never over it.
+            var filled = drawn
+            if (comic && drawn < layout.units.size) {
+                val units = withContext(Dispatchers.Default) { plainManhwaUnits(onDevice, bitmap, hint) }
+                val fresh = units.filter { unit -> drawnAreas.none { it.overlaps(unit.box) } }
+                if (fresh.isNotEmpty()) {
+                    val plain = timed("translate") {
+                        translateImageWords(fresh, options.target, options.script, providers.imageTranslator, providers.imageRetry)
+                    }
+                    filled += timed("paint") { withContext(Dispatchers.Default) {
+                        renderer.paint(bitmap, fresh, plain.map { it.take(2000) }, layout.protected + drawnAreas,
+                            options.target, comic = false)
+                    } }
+                }
+            }
+            val keptText = missed || filled < layout.units.size
+            val counts = textCounts(layout.units, translations, filled)
+            if (filled == 0) return ImageFrame.Original(keptText, counts)
             coroutineContext.ensureActive()
             // Partial renders are valid for this session, but don't pin a missed bubble or provider error to disk.
             display = true
