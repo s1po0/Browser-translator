@@ -1,4 +1,0 @@
--rw-r--r-- 1 runner runner 142964 Nov 21 04:48 /tmp/page.webp
-https://translate.google.com/translate_a/i?client=gtx&sl=auto&tl=fa&otf=1&pc=1&sc=1 -> 404 size=1574
-https://translate.googleapis.com/translate_a/i?client=gtx&sl=auto&tl=fa&otf=1&pc=1&sc=1 -> 404 size=1635
-https://translate.google.com/translate_a/t?client=gtx&sl=auto&tl=fa -> 400 size=1695
