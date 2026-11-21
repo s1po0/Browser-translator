@@ -45,7 +45,6 @@ internal class PaddleComicOcr(private val context: Context) : AutoCloseable {
     private var unavailable = false
     // Session ownership is serialized by gate; close defers destruction until the current call releases it.
     private var model: Model? = null
-    private val comicDetector by lazy { ComicTextDetector(context) }
 
     private suspend fun <T> withModel(fallback: T, block: suspend CoroutineScope.(Model) -> T): T = withContext(Dispatchers.Default) {
         gate.withLock {
@@ -168,6 +167,30 @@ internal class PaddleComicOcr(private val context: Context) : AutoCloseable {
                             }
                         } finally { big.recycle() }
                     }
+                }
+            }
+            // Faded or low-contrast lettering: normalise the tone range on a copy and give the reader a second look.
+            if (masked == null && !isolatedBand && upscaleBudget > 0 && box.width >= 8 && box.height >= 6) {
+                val pad = box.expand(5, 5).clip(image.width, image.height)
+                val crop = try { Bitmap.createBitmap(image, pad.left, pad.top, pad.width, pad.height) } catch (_: IllegalArgumentException) { null }
+                val clear = crop?.let { runCatching { clearerOcrBitmap(it) }.getOrNull() }
+                crop?.recycle()
+                if (clear != null) {
+                    upscaleBudget--
+                    try {
+                        val sx = clear.width.toFloat() / pad.width
+                        val sy = clear.height.toFloat() / pad.height
+                        val scaled = pad.moved(-pad.left, -pad.top).let {
+                            Box((it.left * sx).toInt(), (it.top * sy).toInt(), (it.right * sx).toInt(), (it.bottom * sy).toInt())
+                        }
+                        val third = active.refine(clear, scaled)?.takeIf { it.confidence >= .62f && englishLettering(it.value) }
+                        if (third != null && third.value.length in 1..280) {
+                            val reading = OcrLine(third.value, box, emptyList(), id++, confidence = third.confidence,
+                                bubbleRead = region?.takeIf { it.dark || recovered })
+                            mergeOcrLines(result, listOf(reading))
+                            return reading
+                        }
+                    } finally { clear.recycle() }
                 }
             }
             return null
@@ -310,7 +333,6 @@ internal class PaddleComicOcr(private val context: Context) : AutoCloseable {
             if (!busy) model.also { model = null } else null
         }
         retired?.close()
-        comicDetector.close()
     }
 
     private class Model(private val context: Context) : AutoCloseable {

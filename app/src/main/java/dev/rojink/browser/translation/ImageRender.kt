@@ -74,9 +74,7 @@ internal class ImageRenderer(private val context: Context) {
             if (layout == null) { report(PaintDecision.NO_ROOM); return@forEachIndexed }
             val tones = erase.map { it to borderTone(bitmap, it) }
             val (background, noisy) = borderTone(bitmap, original)
-            for ((box, tone) in tones) {
-                canvas.drawRect(box.left.toFloat(), box.top.toFloat(), box.right.toFloat(), box.bottom.toFloat(), Paint().apply { color = tone.first })
-            }
+            for ((box, tone) in tones) eraseLettering(canvas, bitmap, box, tone.first, noisy || tone.second)
             canvas.save()
             canvas.clipRect(drawBox.left, drawBox.top, drawBox.right, drawBox.bottom)
             canvas.translate(drawBox.left.toFloat(), drawBox.top + (drawBox.height - layout.height) / 2f)
@@ -99,6 +97,39 @@ internal class ImageRenderer(private val context: Context) {
         }
         return count
     }
+
+
+/**
+ * Flat paper is wiped with one rectangle. Lettering that sits on artwork is wiped stroke by stroke instead,
+ * so the drawing underneath survives and only the original glyph pixels take the paper tone.
+ */
+private fun eraseLettering(canvas: Canvas, bitmap: Bitmap, box: Box, tone: Int, keepArt: Boolean) {
+    fun fill() = canvas.drawRect(box.left.toFloat(), box.top.toFloat(), box.right.toFloat(), box.bottom.toFloat(), Paint().apply { color = tone })
+    val w = box.width
+    val h = box.height
+    if (!keepArt || w < 3 || h < 3 || box.left < 0 || box.top < 0 || box.right > bitmap.width || box.bottom > bitmap.height) { fill(); return }
+    val pixels = IntArray(w * h)
+    try { bitmap.getPixels(pixels, 0, w, box.left, box.top, w, h) } catch (_: IllegalArgumentException) { fill(); return }
+    val strokes = BooleanArray(w * h)
+    var strokePixels = 0
+    for (i in pixels.indices) if (toneGap(pixels[i], tone) > 78) { strokes[i] = true; strokePixels++ }
+    // A wide mask means the box is artwork, not lettering; a rectangle is both cheaper and cleaner there.
+    if (strokePixels == 0 || strokePixels * 100 > pixels.size * 46) { fill(); return }
+    val grown = BooleanArray(w * h)
+    for (y in 0 until h) for (x in 0 until w) {
+        if (!strokes[y * w + x]) continue
+        for (dy in -1..1) for (dx in -1..1) {
+            val nx = x + dx
+            val ny = y + dy
+            if (nx in 0 until w && ny in 0 until h) grown[ny * w + nx] = true
+        }
+    }
+    for (i in pixels.indices) if (grown[i]) pixels[i] = tone
+    val patch = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+    patch.setPixels(pixels, 0, w, 0, 0, w, h)
+    canvas.drawBitmap(patch, box.left.toFloat(), box.top.toFloat(), null)
+    patch.recycle()
+}
 
     private fun fitted(text: String, paint: TextPaint, area: Box, sizeHint: Int, rtl: Boolean, preferredMin: Float): StaticLayout? {
         var size = (sizeHint * if (rtl) 1.17f else 1.04f).coerceIn(preferredMin, 116f)
@@ -135,3 +166,7 @@ internal class ImageRenderer(private val context: Context) {
     private fun absChannel(a: Int, b: Int) = kotlin.math.abs(Color.red(a) - Color.red(b)) +
         kotlin.math.abs(Color.green(a) - Color.green(b)) + kotlin.math.abs(Color.blue(a) - Color.blue(b))
 }
+
+/** Channel-sum distance used by stroke erase; the renderer's member version is scoped to its class. */
+private fun toneGap(a: Int, b: Int) = kotlin.math.abs(Color.red(a) - Color.red(b)) +
+    kotlin.math.abs(Color.green(a) - Color.green(b)) + kotlin.math.abs(Color.blue(a) - Color.blue(b))
