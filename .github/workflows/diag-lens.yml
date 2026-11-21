@@ -22,17 +22,19 @@ jobs:
           curl -fsSL -A "$UA" -e 'https://asurascans.com/' -o /tmp/page.webp \
             'https://cdn.asurascans.com/asura-images/chapters/murim-login/251/43921f.webp?v=1794161901' || echo "image download failed" > lensprobe/status.txt
           ls -l /tmp/page.webp >> lensprobe/status.txt 2>&1 || true
-          for ep in "https://lens.google.com/v3/upload?hl=en" "https://lens.google.com/upload?ep=ccm&hl=en"; do
-            name=$(echo "$ep" | md5sum | cut -c1-8)
-            code=$(curl -sS -o "lensprobe/body-$name.html" -w '%{http_code}' -A "$UA" \
-              -H 'Accept-Language: en-US,en;q=0.9' \
-              -F "encoded_image=@/tmp/page.webp;type=image/webp" \
-              -F 'processed_image_dimensions=900,1526' \
-              "$ep" || echo ERR)
-            echo "$ep -> $code size=$(wc -c < "lensprobe/body-$name.html" 2>/dev/null || echo 0)" >> lensprobe/status.txt
-            head -c 200000 "lensprobe/body-$name.html" > "lensprobe/head-$name.html" 2>/dev/null || true
-            rm -f "lensprobe/body-$name.html"
-          done
+          UA='Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36'
+          rm -f lensprobe/body-*.html lensprobe/head-*.html
+          curl -sS -c /tmp/jar -b /tmp/jar -o /dev/null -A "$UA" -H 'Accept-Language: en-US,en;q=0.9' \
+            -D /tmp/hdr -F "encoded_image=@/tmp/page.webp;type=image/webp" \
+            -F 'processed_image_dimensions=900,1526' 'https://lens.google.com/v3/upload?hl=en'
+          loc=$(grep -i '^location:' /tmp/hdr | tr -d '\r' | sed 's/^[Ll]ocation: //') || true
+          echo "redirect: $loc" >> lensprobe/status.txt
+          if [ -n "$loc" ]; then
+            curl -sSL -c /tmp/jar -b /tmp/jar -A "$UA" -H 'Accept-Language: en-US,en;q=0.9' -o lensprobe/result.html "$loc"
+            echo "result size=$(wc -c < lensprobe/result.html)" >> lensprobe/status.txt
+            grep -o 'SNAP[^"<]\{0,40\}' lensprobe/result.html | head -5 > lensprobe/hits.txt || true
+            head -c 400000 lensprobe/result.html > lensprobe/head.html && mv lensprobe/head.html lensprobe/result.html
+          fi
       - name: Commit probe
         run: |
           git config user.name 'diag-bot'
