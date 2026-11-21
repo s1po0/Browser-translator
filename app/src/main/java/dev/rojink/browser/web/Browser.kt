@@ -40,6 +40,7 @@ import dev.rojink.browser.search.WebSearchCategory
 import dev.rojink.browser.search.WebSearchFilters
 import dev.rojink.browser.search.WebSearchRequest
 import dev.rojink.browser.search.WebSearchTrail
+import java.net.URLEncoder
 import dev.rojink.browser.search.braveResults
 import dev.rojink.browser.search.braveSearchCookies
 import dev.rojink.browser.search.braveSearchUrl
@@ -404,6 +405,25 @@ class Browser(
                 dao.trimSearchPages()
                 notice = R.string.index_page_added
             }
+        }
+    }
+
+    /** Google Lens reads comic lettering the bundled models miss; hand it the page image in view. */
+    fun openInLens() {
+        val tab = selected
+        val web = tab.view ?: return
+        if (tab.failed || tab.progress != 100) { notice = R.string.page_error; return }
+        val revision = tab.revision
+        val script = runCatching { context.assets.open("lens-image.js").bufferedReader().use { it.readText() } }.getOrNull() ?: return
+        web.evaluateJavascript(script) { raw ->
+            if (tab.destroyed || tab.revision != revision || selected !== tab || tab.view !== web) return@evaluateJavascript
+            val src = runCatching { JSONObject(raw.orEmpty()).optString("src") }.getOrNull()
+                ?.takeIf { it.startsWith("https://") && it.length <= 2048 }
+            // Lens accepts a public image URL directly; otherwise let the reader upload the picture.
+            val target = if (src != null) "https://lens.google.com/uploadbyurl?url=" + URLEncoder.encode(src, "UTF-8")
+                else "https://lens.google.com/"
+            if (!newTab()) return@evaluateJavascript
+            if (!navigate(target)) notice = R.string.operation_failed
         }
     }
 

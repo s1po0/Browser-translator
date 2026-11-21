@@ -235,4 +235,5 @@
     <string name="search_exact_phrase_detail">داوای ئەم وشانە بەیەکەوە و بەم ڕیزە بکە.</string>
     <string name="search_pdfs">دۆزینەوەی فایلی PDF</string>
     <string name="search_tools_detail">ئەم ئامرازانە بۆ ئەنجامەکانی وێبن. ئەگەر ئەنجام کەم بێت، Brave لەوانەیە سنووری گەڕان فراوان بکات.</string>
+    <string name="google_lens">گۆگڵ لێنس</string>
 </resources>

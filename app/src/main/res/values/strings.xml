@@ -235,4 +235,5 @@
     <string name="search_exact_phrase_detail">Ask for these words together, in this order.</string>
     <string name="search_pdfs">Find PDFs</string>
     <string name="search_tools_detail">These tools are for web results. Brave may broaden your search if too few pages match.</string>
+    <string name="google_lens">Google Lens</string>
 </resources>

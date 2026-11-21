@@ -10,6 +10,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -110,6 +111,11 @@ import dev.rojink.browser.web.webUrl
                     Button(onClick = { onTranslate?.invoke() }, modifier = Modifier.weight(1f).testTag("source-reader-translate"),
                         enabled = onTranslate != null && tab.view != null && !tab.failed && tab.progress == 100, colors = colors) {
                         Text(tr(R.string.translate))
+                    }
+                    // Google Lens reads stylized comic lettering the on-device models can miss.
+                    IconButton({ browser.openInLens() }, modifier = Modifier.testTag("source-reader-lens"),
+                        enabled = tab.view != null && !tab.failed && tab.progress == 100) {
+                        Icon(Icons.Default.Search, tr(R.string.google_lens))
                     }
                 }
             }

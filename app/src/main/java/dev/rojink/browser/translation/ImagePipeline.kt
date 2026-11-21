@@ -189,9 +189,10 @@ internal class ImagePipeline(
         } else null
         if (key != null) cache.get(key)?.let { return ImageFrame.Cached(it) }
         val info = withContext(Dispatchers.Default) { imageInfo(input) }
-        val plan = if (vision == null && info.upright && info.mime in regionFormats) planLongImage(info.size) else null
+        // Cloud Vision also runs per window: a tall strip never has to be decoded whole just to reach the cloud reader.
+        val plan = if (info.upright && info.mime in regionFormats) planLongImage(info.size) else null
         if (plan != null) {
-            longImageSlot.withPermit { prepareLong(input, plan, hint, options, providers, key) }?.let { return it }
+            longImageSlot.withPermit { prepareLong(input, plan, hint, options, providers, key, vision) }?.let { return it }
         }
         val bitmap = timed("decode") { withContext(Dispatchers.Default) { decode(input, info) } }
         var display = false
@@ -225,7 +226,8 @@ internal class ImagePipeline(
     }
 
     private suspend fun prepareLong(
-        input: ByteArray, plan: LongImagePlan, hint: OcrHint, options: ReaderOptions, providers: ReaderProviders, key: String?,
+        input: ByteArray, plan: LongImagePlan, hint: OcrHint, options: ReaderOptions, providers: ReaderProviders,
+        key: String?, vision: String?,
     ): ImageFrame? {
         // Retain ownership until withContext returns; cancellation can discard a result at dispatcher handoff.
         var pending: Bitmap? = null
@@ -235,7 +237,8 @@ internal class ImagePipeline(
                 source.use {
                     val bitmap = Bitmap.createBitmap(plan.output.width, plan.output.height, Bitmap.Config.ARGB_8888)
                         .also { pending = it }
-                    val scan = timed("strip OCR") { source.scan(bitmap, onDevice, hint) } ?: return@withContext null
+                    val stripOcr = if (vision != null) CloudVisionOcrProvider(vision) else onDevice
+                    val scan = timed("strip OCR") { source.scan(bitmap, stripOcr, hint) } ?: return@withContext null
                     if (scan.readings.isEmpty()) return@withContext ImageFrame.Original(keptText = scan.suspectedMiss)
                     val units = scan.readings.map { it.unit }
                     val translations = timed("translate") {
