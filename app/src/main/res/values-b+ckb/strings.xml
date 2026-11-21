@@ -236,4 +236,5 @@
     <string name="search_pdfs">دۆزینەوەی فایلی PDF</string>
     <string name="search_tools_detail">ئەم ئامرازانە بۆ ئەنجامەکانی وێبن. ئەگەر ئەنجام کەم بێت، Brave لەوانەیە سنووری گەڕان فراوان بکات.</string>
     <string name="google_lens">گۆگڵ لێنس</string>
+    <string name="vision_key_help">Cloud Vision هەمان بزوێنەری ناسینەوەی دەقە کە Google Lens بەکاری دەهێنێت. بەشی خۆڕایی: ١٠٠٠ وێنە لە مانگێکدا. کلیلی خۆت دروست بکە لە console.cloud.google.com (سەرەتا «Cloud Vision API» چالاک بکە)، پاشان لێرە دایبنێ — بە کۆدکراوی لەم ئامێرە پاشەکەوت دەکرێت و بۆ هەموو وێنەکان بەکاردێت، لەوانەش وێنەی درێژی webtoon.</string>
 </resources>

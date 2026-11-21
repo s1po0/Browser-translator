@@ -236,4 +236,5 @@
     <string name="search_pdfs">Find PDFs</string>
     <string name="search_tools_detail">These tools are for web results. Brave may broaden your search if too few pages match.</string>
     <string name="google_lens">Google Lens</string>
+    <string name="vision_key_help">Cloud Vision is the OCR engine behind Google Lens. Free tier: 1000 pages a month. Create a key at console.cloud.google.com (enable \"Cloud Vision API\"), then paste it here — it is stored encrypted on this device and used for every image, including tall webtoon strips.</string>
 </resources>

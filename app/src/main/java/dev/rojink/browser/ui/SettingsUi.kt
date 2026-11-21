@@ -104,11 +104,16 @@ import kotlin.math.roundToInt
         var value by remember(kind) { mutableStateOf("") }
         AlertDialog(onDismissRequest = { keyDialog = null }, title = { Text(tr(if (kind == ApiKey.VISION) R.string.vision_key else R.string.cloud_key)) }, text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(tr(R.string.key_help))
+                Text(tr(if (kind == ApiKey.VISION) R.string.vision_key_help else R.string.key_help))
                 OutlinedTextField(value, { value = it.take(180) }, singleLine = true, label = { Text(tr(R.string.key_field)) }, visualTransformation = PasswordVisualTransformation())
                 if (kind in enabledKeys) TextButton(onClick = { browser.safely { app.keys.set(kind, null); if (kind == ApiKey.VISION) app.settings.update { it.copy(useVision = false) } }; keyDialog = null }) { Text(tr(R.string.remove)) }
             }
-        }, confirmButton = { TextButton(enabled = value.isNotBlank(), onClick = { val key = value; browser.safely { app.keys.set(kind, key) }; keyDialog = null }) { Text(tr(R.string.save)) } },
+        }, confirmButton = { TextButton(enabled = value.isNotBlank(), onClick = {
+            val key = value
+            // A saved Vision key is meant to be used: turn the switch on instead of asking for a second tap.
+            browser.safely { app.keys.set(kind, key); if (kind == ApiKey.VISION) app.settings.update { it.copy(useVision = true) } }
+            keyDialog = null
+        }) { Text(tr(R.string.save)) } },
             dismissButton = { TextButton(onClick = { keyDialog = null }) { Text(tr(R.string.cancel)) } })
     }
     confirm?.let { (title, action) ->
