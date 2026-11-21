@@ -1,4 +1,4 @@
-name: Probe Lens upload
+name: Probe translate image endpoints
 
 on:
   push:
@@ -14,31 +14,29 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - name: Probe endpoints
+      - name: Probe
         run: |
           set -uo pipefail
-          mkdir -p lensprobe
+          rm -rf lensprobe && mkdir -p lensprobe
           UA='Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36'
           curl -fsSL -A "$UA" -e 'https://asurascans.com/' -o /tmp/page.webp \
-            'https://cdn.asurascans.com/asura-images/chapters/murim-login/251/43921f.webp?v=1794161901' || echo "image download failed" > lensprobe/status.txt
+            'https://cdn.asurascans.com/asura-images/chapters/murim-login/251/43921f.webp?v=1794161901' || echo "download failed" >> lensprobe/status.txt
           ls -l /tmp/page.webp >> lensprobe/status.txt 2>&1 || true
-          UA='Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36'
-          rm -f lensprobe/body-*.html lensprobe/head-*.html
-          curl -sS -c /tmp/jar -b /tmp/jar -o /dev/null -A "$UA" -H 'Accept-Language: en-US,en;q=0.9' \
-            -D /tmp/hdr -F "encoded_image=@/tmp/page.webp;type=image/webp" \
-            -F 'processed_image_dimensions=900,1526' 'https://lens.google.com/v3/upload?hl=en'
-          loc=$(grep -i '^location:' /tmp/hdr | tr -d '\r' | sed 's/^[Ll]ocation: //') || true
-          echo "redirect: $loc" >> lensprobe/status.txt
-          if [ -n "$loc" ]; then
-            curl -sSL -c /tmp/jar -b /tmp/jar -A "$UA" -H 'Accept-Language: en-US,en;q=0.9' -o lensprobe/result.html "$loc"
-            echo "result size=$(wc -c < lensprobe/result.html)" >> lensprobe/status.txt
-            grep -o 'SNAP[^"<]\{0,40\}' lensprobe/result.html | head -5 > lensprobe/hits.txt || true
-            head -c 400000 lensprobe/result.html > lensprobe/head.html && mv lensprobe/head.html lensprobe/result.html
-          fi
+          for ep in \
+            'https://translate.google.com/translate_a/i?client=gtx&sl=auto&tl=fa&otf=1&pc=1&sc=1' \
+            'https://translate.googleapis.com/translate_a/i?client=gtx&sl=auto&tl=fa&otf=1&pc=1&sc=1' \
+            'https://translate.google.com/translate_a/t?client=gtx&sl=auto&tl=fa'; do
+            name=$(echo "$ep" | md5sum | cut -c1-8)
+            code=$(curl -sS -o "lensprobe/body-$name.txt" -w '%{http_code}' -A "$UA" -H 'Accept-Language: en-US,en;q=0.9' \
+              -F "image=@/tmp/page.webp;type=image/webp" -F 'filename=page.webp' "$ep" 2>/dev/null || echo ERR)
+            echo "$ep -> $code size=$(wc -c < lensprobe/body-$name.txt 2>/dev/null || echo 0)" >> lensprobe/status.txt
+            head -c 4000 "lensprobe/body-$name.txt" > "lensprobe/sample-$name.txt" 2>/dev/null || true
+            rm -f "lensprobe/body-$name.txt"
+          done
       - name: Commit probe
         run: |
           git config user.name 'diag-bot'
           git config user.email 'diag@users.noreply.github.com'
           git add lensprobe
-          git commit -m 'Lens probe responses' || exit 0
+          git commit -m 'Translate image probe' || exit 0
           git push
