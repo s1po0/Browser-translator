@@ -8,6 +8,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import kotlin.math.abs
+import kotlin.math.roundToInt
 
 internal class OnDeviceImageOcr(context: Context) : OcrProvider, AutoCloseable {
     private val mlKit = MlKitOcrProvider()
@@ -32,8 +33,15 @@ internal class OnDeviceImageOcr(context: Context) : OcrProvider, AutoCloseable {
             catch (_: Exception) { emptyList() }
             catch (_: LinkageError) { emptyList() }
             ensureActive()
+            // Balloons the page-scale readers left in English get one clean crop each, read by the same ML Kit
+            // engine the desktop Kurd-man app uses. The mask keeps hands and clothes out of the crop.
+            val cropped = try { bubbleCropLines(image, bubbles, base.lines + found, hint, mlKit) }
+            catch (e: CancellationException) { throw e }
+            catch (_: Exception) { emptyList() }
+            catch (_: LinkageError) { emptyList() }
             val surface = ComicSurface(image, bubbles)
-            base.copy(lines = reconcileComicOcr(base.lines, found, explicit, surface::letteringSurface), comic = true, bubbles = bubbles)
+            base.copy(lines = reconcileComicOcr(base.lines, found + cropped, explicit, surface::letteringSurface),
+                comic = true, bubbles = bubbles)
         }
     }
 
@@ -165,4 +173,52 @@ internal class ComicSurface(private val image: Bitmap, private val bubbles: List
         }
         return candidates.firstOrNull(::clear)
     }
+}
+
+/** How many balloon crops one page may cost; each is one ML Kit call on a small bitmap. */
+private const val MAX_BUBBLE_CROPS = 6
+
+/**
+ * A tight, masked, enlarged crop of one balloon body is the most reliable reading available on device:
+ * the engine sees nothing but its own lettering. Bubbles that already carry a reading are skipped.
+ */
+private suspend fun bubbleCropLines(
+    image: Bitmap, bubbles: List<ComicBubble>, known: List<OcrLine>, hint: OcrHint, reader: MlKitOcrProvider,
+): List<OcrLine> {
+    if (bubbles.isEmpty()) return emptyList()
+    val found = mutableListOf<OcrLine>()
+    var budget = MAX_BUBBLE_CROPS
+    for (bubble in bubbles.sortedByDescending { it.bounds.width * it.bounds.height }) {
+        if (budget <= 0) break
+        val area = bubble.bounds
+        if (area.width < 40 || area.height < 18 || area.width > 900 || area.height > 900) continue
+        if (missedBubbleBands(bubble, known).isEmpty()) continue
+        if (known.any { areaOverlap(it.box, area) >= .34 }) continue
+        val contour = bubble.contour ?: continue
+        val crop = contour.maskedCrop(image, area) ?: continue
+        budget--
+        val factor = if (area.width < 300) 2.6f else 2f
+        val big = runCatching {
+            Bitmap.createScaledBitmap(crop, (crop.width * factor).toInt().coerceAtLeast(1),
+                (crop.height * factor).toInt().coerceAtLeast(1), true)
+        }.getOrNull()
+        if (big == null) { crop.recycle(); continue }
+        if (big !== crop) crop.recycle()
+        try {
+            val page = runCatching { reader.recognize(big, hint.copy(explicit = ENGLISH_COMIC_SCRIPT, enhanced = false)) }.getOrNull()
+                ?: continue
+            for (line in page.lines) {
+                if (!englishLettering(line.text) || line.box.width < 6 || line.box.height < 5) continue
+                val full = Box(
+                    area.left + (line.box.left / factor).roundToInt(), area.top + (line.box.top / factor).roundToInt(),
+                    area.left + (line.box.right / factor).roundToInt(), area.top + (line.box.bottom / factor).roundToInt(),
+                ).clip(image.width, image.height)
+                if (full.width < 5 || full.height < 4) continue
+                if (!contour.containsInk(full)) continue
+                found += OcrLine(line.text, full, emptyList(), 2_000_000 + found.size,
+                    confidence = line.confidence.coerceIn(.80f, 1f), bubbleRead = bubble, inkVerifiedLatin = true)
+            }
+        } finally { big.recycle() }
+    }
+    return found
 }
