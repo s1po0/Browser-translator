@@ -1,0 +1,20 @@
+{
+  "name": "panel-reader",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Manhwa and webtoon reader with Kurdish Sorani translation overlays",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "android:sync": "npm run build && cap sync android",
+    "android:open": "cap open android",
+    "android:apk": "npm run android:sync && cd android && ./gradlew assembleDebug",
+    "start": "python3 -m http.server 5173"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.6.2",
+    "@capacitor/core": "^8.6.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.6.2"
+  }
+}

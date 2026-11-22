@@ -1,0 +1,9 @@
+{
+  "appId": "com.panel.reader",
+  "appName": "Panel Reader",
+  "webDir": "www",
+  "bundledWebRuntime": false,
+  "server": {
+    "androidScheme": "https"
+  }
+}

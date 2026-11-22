@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0d0d10" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="icons/panel-icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="icons/panel-192.png" />
+  <meta name="description" content="A calm, cinematic reader for manhwa translated into Kurdish Sorani." />
+  <title>Panel — Manhwa, in your language</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&family=Noto+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <a class="brand" href="#top" aria-label="Panel home"><span class="brand-mark"><i></i><i></i><i></i></span><span>panel<span class="brand-dot">.</span></span></a>
+      <div class="chapter-meta"><span class="eyebrow">YOUR READING ROOM</span><span class="chapter-name">The Last Moon<span class="chapter-divider">/</span><span class="chapter-number">Chapter 08</span></span></div>
+      <div class="top-actions">
+        <button class="icon-button" id="bookmarkBtn" aria-label="Bookmark chapter" title="Save chapter"><svg viewBox="0 0 24 24"><path d="M6.75 4.75h10.5v15l-5.25-3.6-5.25 3.6z"/></svg></button>
+        <button class="avatar" aria-label="Reader profile">S</button>
+      </div>
+    </header>
+
+    <main id="top">
+      <section class="reader-toolbar" aria-label="Reader controls">
+        <div class="browser-line">
+          <button class="back-button" aria-label="Go back" id="backBtn"><svg viewBox="0 0 24 24"><path d="m14.5 5-7 7 7 7"/></svg></button>
+          <div class="url-field"><svg class="url-lock" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg><input id="urlInput" aria-label="Chapter URL" placeholder="Paste a chapter URL or drop images here" autocomplete="url" /><button class="clear-url" id="clearUrl" aria-label="Clear URL">×</button></div>
+          <button class="icon-button refresh-button" id="refreshBtn" aria-label="Refresh chapter"><svg viewBox="0 0 24 24"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M5.6 9a7 7 0 0 1 11.8-2L20 12M4 12l2.6 5a7 7 0 0 0 11.8-2"/></svg></button>
+        </div>
+        <div class="toolbar-bottom">
+          <div class="chapter-controls"><button class="text-action" id="prevChapter"><svg viewBox="0 0 24 24"><path d="m14.5 5-7 7 7 7"/></svg><span>Previous</span></button><span class="toolbar-separator"></span><button class="text-action" id="demoBtn"><span class="demo-spark">✦</span><span>Demo chapter</span></button></div>
+          <div class="reader-actions">
+            <span class="lang-pill"><span class="green-dot"></span>Korean <svg viewBox="0 0 16 16"><path d="m4 6 4 4 4-4"/></svg></span>
+            <button class="translate-button active" id="translateBtn"><svg viewBox="0 0 24 24"><path d="M4 5h10M9 3v2m4 0c-.7 4.5-3.7 8-7 10m1-7c.8 2.5 2.5 4.5 5 6M14 20l3.2-8 3.3 8m-5.4-2h4.2"/></svg><span>Translate</span><b>سۆرانی</b><span class="toggle-track"><i></i></span></button>
+            <button class="settings-trigger" id="settingsBtn" aria-label="Reader settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-1.6 2.8-.2-.1a1.7 1.7 0 0 0-1.8.1 1.7 1.7 0 0 0-.9 1.5v.2h-3.2v-.2a1.7 1.7 0 0 0-1.2-1.6 1.7 1.7 0 0 0-1.8.3l-.2.1-2.2-2.2.1-.2a1.7 1.7 0 0 0 .2-1.8 1.7 1.7 0 0 0-1.5-1H5.3v-3.2h.2a1.7 1.7 0 0 0 1.5-.9 1.7 1.7 0 0 0-.1-1.8l-.1-.2L9 6.5l.2.1a1.7 1.7 0 0 0 1.8.2 1.7 1.7 0 0 0 1-1.5V5h3.2v.2a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.1l.2-.1 1.6 2.8-.1.2a1.7 1.7 0 0 0-.3 1.8 1.7 1.7 0 0 0 1.5 1h.2v3.2h-.2a1.7 1.7 0 0 0-1.5.5Z"/></svg></button>
+          </div>
+        </div>
+      </section>
+
+      <section class="reader-layout">
+        <aside class="side-rail">
+          <button class="rail-button selected" title="Reader"><svg viewBox="0 0 24 24"><path d="M4 5.5c3-1.5 5.7-1.5 8 0 2.3-1.5 5-1.5 8 0v13c-3-1.5-5.7-1.5-8 0-2.3-1.5-5-1.5-8 0zM12 6v12"/></svg></button>
+          <button class="rail-button" id="hideOverlays" title="Show or hide translations"><svg viewBox="0 0 24 24"><path d="M2.5 12s3.3-6 9.5-6 9.5 6 9.5 6-3.3 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.5"/></svg></button>
+          <button class="rail-button" id="uploadBtn" title="Upload pages"><svg viewBox="0 0 24 24"><path d="M12 16V4m-4 4 4-4 4 4M5 14v5h14v-5"/></svg></button>
+          <span class="rail-rule"></span>
+          <button class="rail-button" id="helpBtn" title="Reader help"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.6 9a2.5 2.5 0 1 1 4.4 1.6c-1.1 1.1-2 1.4-2 3M12 17.5h.01"/></svg></button>
+        </aside>
+        <div class="story-column">
+          <div class="story-heading"><div><div class="story-kicker"><span class="kicker-line"></span> THE LAST MOON <span class="kicker-dot">·</span> 08</div><h1>A promise in the rain</h1><p>Translated for you <span class="heading-dot"></span> 6 panels <span class="heading-dot"></span> 4 min read</p></div><button class="chapter-menu" id="chapterMenu" aria-label="More chapter options"><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></button></div>
+          <div class="progress-wrap"><div class="progress-copy"><span id="progressLabel">Ready to read</span><span id="progressPercent">0%</span></div><div class="progress-track"><div class="progress-fill" id="progressFill"></div></div></div>
+          <div class="reader-status" id="statusBar"><span class="status-icon">✦</span><span id="statusText">Sorani translation is ready</span><span class="status-count">6 / 6 panels</span></div>
+          <div class="comic" id="comic" aria-label="Manhwa chapter panels"></div>
+          <div class="end-card"><div class="end-icon">☾</div><div><strong>End of chapter 08</strong><span>Take a breath. The next chapter can wait.</span></div><button id="nextChapter">Next chapter <svg viewBox="0 0 24 24"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></button></div>
+          <div class="reader-footer"><span>Made for the way you read.</span><span class="footer-brand">panel<span>.</span></span></div>
+        </div>
+        <aside class="chapter-aside"><div class="aside-card"><div class="aside-label">READING NOW <span class="pulse"></span></div><div class="aside-title">The Last Moon</div><div class="aside-author">by Haneul Studio</div><div class="aside-art"><div class="art-moon"></div><div class="art-roof"></div><div class="art-person"></div></div><div class="aside-stats"><div><span>CHAPTER</span><b>08 <i>/ 42</i></b></div><div><span>LANGUAGE</span><b>کوردی <i>سۆرانی</i></b></div></div><button class="aside-bookmark" id="asideBookmark"><svg viewBox="0 0 24 24"><path d="M6.75 4.75h10.5v15l-5.25-3.6-5.25 3.6z"/></svg><span>Save to library</span></button></div><div class="tip-card"><span class="tip-star">✳</span><div><b>A little tip</b><p>Tap any translation to peek at the original dialogue.</p></div></div></aside>
+      </section>
+      <div class="mobile-bottom"><span class="mobile-progress"><i id="mobileProgress"></i></span><span id="mobilePage">01 <i>/ 06</i></span><button id="mobileSettings" aria-label="Settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-1.6 2.8-.2-.1a1.7 1.7 0 0 0-1.8.1 1.7 1.7 0 0 0-.9 1.5v.2h-3.2v-.2a1.7 1.7 0 0 0-1.2-1.6 1.7 1.7 0 0 0-1.8.3l-.2.1-2.2-2.2.1-.2a1.7 1.7 0 0 0 .2-1.8 1.7 1.7 0 0 0-1.5-1H5.3v-3.2h.2a1.7 1.7 0 0 0 1.5-.9 1.7 1.7 0 0 0-.1-1.8l-.1-.2L9 6.5l.2.1a1.7 1.7 0 0 0 1.8.2 1.7 1.7 0 0 0 1-1.5V5h3.2v.2a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.1l.2-.1 1.6 2.8-.1.2a1.7 1.7 0 0 0-.3 1.8 1.7 1.7 0 0 0 1.5 1h.2v3.2h-.2a1.7 1.7 0 0 0-1.5.5Z"/></svg></button></div>
+    </main>
+    <div class="toast" id="toast" role="status"></div>
+  </div>
+
+  <div class="drawer-scrim" id="drawerScrim"></div>
+  <section class="settings-drawer" id="settingsDrawer" aria-label="Reader settings" aria-hidden="true">
+    <div class="drawer-handle"></div><div class="drawer-header"><div><span class="drawer-eyebrow">MAKE IT YOURS</span><h2>Reader settings</h2></div><button id="closeSettings" aria-label="Close settings">×</button></div>
+    <div class="setting-section"><div class="setting-heading"><b>Translation appearance</b><span>Customize your reading view</span></div><div class="setting-label">OVERLAY STYLE</div><div class="style-options"><button class="style-option selected" data-style="solid"><span class="swatch swatch-solid">Aa</span><b>Paper</b></button><button class="style-option" data-style="glass"><span class="swatch swatch-glass">Aa</span><b>Frosted</b></button><button class="style-option" data-style="dark"><span class="swatch swatch-dark">Aa</span><b>Midnight</b></button></div></div>
+    <div class="setting-section font-setting"><div class="setting-heading"><b>Text size</b><span id="fontValue">100%</span></div><input type="range" id="fontRange" min="80" max="130" value="100" step="5" /><div class="range-labels"><span>Aa</span><span>Aa</span></div></div>
+    <div class="setting-section"><div class="setting-heading"><b>Translation tone</b><span>Choose the feeling</span></div><div class="tone-options"><button class="tone-option selected" data-tone="natural"><span>☁</span><b>Natural</b><small>Everyday Sorani</small></button><button class="tone-option" data-tone="dramatic"><span>✧</span><b>Dramatic</b><small>Action &amp; intensity</small></button></div></div>
+    <div class="privacy-note"><span class="privacy-icon">◈</span><div><b>Your pages stay yours</b><p>Demo translations are local. No API key or custom endpoint needed to explore.</p></div></div>
+    <div class="drawer-bottom"><button class="done-button" id="doneSettings">Done</button><span>Panel reader <i>·</i> version 1.0</span></div>
+  </section>
+  <input type="file" id="fileInput" accept="image/*" multiple hidden />
+  <div class="drop-overlay" id="dropOverlay"><div><span>＋</span><b>Drop your chapter pages</b><small>Images will be added to your reader</small></div></div>
+  <div class="modal-scrim" id="modalScrim"><div class="help-modal"><button class="modal-close" id="closeModal">×</button><div class="modal-glyph">✦</div><span class="drawer-eyebrow">WELCOME TO PANEL</span><h2>Your story, understood.</h2><p>Read the way it was meant to feel. Translations sit right over the dialogue, in natural Kurdish Sorani.</p><div class="help-steps"><div><span>01</span><b>Scroll to read</b><small>Pages flow together, just like a webtoon.</small></div><div><span>02</span><b>Tap to peek</b><small>Touch a bubble translation to reveal the original.</small></div><div><span>03</span><b>Make it yours</b><small>Fine-tune the look and tone in settings.</small></div></div><button class="done-button" id="gotIt">Let's read</button></div></div>
+  <script src="app.js"></script>
+</body>
+</html>
