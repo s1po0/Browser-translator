@@ -6,12 +6,14 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.ClipData;
 import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
+import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Rect;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Environment;
+import android.os.Handler;
+import android.os.Looper;
 import android.provider.MediaStore;
 import android.view.Gravity;
 import android.view.KeyEvent;
@@ -59,7 +61,9 @@ import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Locale;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -70,13 +74,15 @@ public class MainActivity extends AppCompatActivity {
     private static final int CAPTURE_IMAGE = 45;
     private static final int MAX_IMAGES = 18;
     private static final int MAX_TEXT_BLOCKS = 48;
-    private static final int MAX_IMAGE_BYTES = 16 * 1024 * 1024;
     private static final String BG = "#0D0D10";
     private static final String CARD = "#19181E";
     private static final String LILAC = "#B7A1FF";
 
     private final ExecutorService ocrExecutor = Executors.newSingleThreadExecutor();
     private final ExecutorService translationExecutor = Executors.newFixedThreadPool(4);
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private final ConcurrentHashMap<String, String> translationCache = new ConcurrentHashMap<>();
+    private Runnable scrollScanRunnable;
     private TextRecognizer latinRecognizer;
     private TextRecognizer koreanRecognizer;
     private LinearLayout root;
@@ -86,9 +92,9 @@ public class MainActivity extends AppCompatActivity {
     private ProgressBar pageProgress;
     private WebView webView;
     private ValueCallback<Uri[]> fileCallback;
-    private boolean hasTranslations = false;
-    private boolean translationsVisible = true;
+    private boolean liveTranslationEnabled = false;
     private boolean translating = false;
+    private boolean pendingViewportScan = false;
     private boolean standaloneImagePicker = false;
     private boolean autoTranslateNextPage = false;
     private Uri cameraPhotoUri;
@@ -167,7 +173,7 @@ public class MainActivity extends AppCompatActivity {
         statusRow.addView(translateButton, new LinearLayout.LayoutParams(-2, dp(36)));
         top.addView(statusRow);
         translateButton.setOnClickListener(v -> onTranslatePressed());
-        translateButton.setOnLongClickListener(v -> { hasTranslations = false; onTranslatePressed(); return true; });
+        translateButton.setOnLongClickListener(v -> { if (liveTranslationEnabled) { scanViewportNow(); return true; } return false; });
 
         pageProgress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
         pageProgress.setMax(100);
@@ -201,7 +207,8 @@ public class MainActivity extends AppCompatActivity {
             }
             @Override public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
                 super.onPageStarted(view, url, favicon);
-                hasTranslations = false; translationsVisible = true; translating = false;
+                liveTranslationEnabled = false; translating = false; pendingViewportScan = false;
+                if (scrollScanRunnable != null) mainHandler.removeCallbacks(scrollScanRunnable);
                 translateButton.setText("وەرگێڕان");
                 addressBar.setText(url);
                 statusText.setText("دەکرێتەوە…");
@@ -231,6 +238,7 @@ public class MainActivity extends AppCompatActivity {
             }
         });
         webView.setDownloadListener((url, userAgent, contentDisposition, mimeType, contentLength) -> downloadFile(url, userAgent, contentDisposition, mimeType));
+        webView.setOnScrollChangeListener((v, scrollX, scrollY, oldScrollX, oldScrollY) -> scheduleViewportScan());
         root.addView(webView, new LinearLayout.LayoutParams(-1, 0, 1));
 
         LinearLayout controls = new LinearLayout(this);
@@ -375,133 +383,139 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void onTranslatePressed() {
-        if (translating) return;
-        if (hasTranslations) {
-            translationsVisible = !translationsVisible;
-            webView.evaluateJavascript("window.__panelSetVisible && window.__panelSetVisible(" + translationsVisible + ")", null);
-            statusText.setText(translationsVisible ? "وەرگێڕانەکان پیشان دراون" : "وەرگێڕانەکان شاردراونەتەوە");
+        if (liveTranslationEnabled) {
+            liveTranslationEnabled = false;
+            pendingViewportScan = false;
+            if (scrollScanRunnable != null) mainHandler.removeCallbacks(scrollScanRunnable);
+            webView.evaluateJavascript("(()=>{let l=document.getElementById('panel-sorani-overlay-layer');if(l)l.remove();window.__panelSetVisible=null;})()", null);
+            translateButton.setText("وەرگێڕان");
+            statusText.setText("وەرگێڕانی لایڤ وەستا");
             return;
         }
+        if (translating) { pendingViewportScan = true; return; }
+        liveTranslationEnabled = true;
+        translateButton.setText("Live · سۆرانی");
+        statusText.setText("وەرگێڕانی لایڤ چالاکە · وێنەکان دەخوێنمەوە…");
+        scanViewportNow();
+    }
+
+    private void scheduleViewportScan() {
+        if (!liveTranslationEnabled) return;
+        if (translating) { pendingViewportScan = true; return; }
+        if (scrollScanRunnable != null) mainHandler.removeCallbacks(scrollScanRunnable);
+        scrollScanRunnable = this::scanViewportNow;
+        mainHandler.postDelayed(scrollScanRunnable, 550);
+    }
+
+    private void scanViewportNow() {
+        if (!liveTranslationEnabled || webView == null) return;
+        if (translating) { pendingViewportScan = true; return; }
         translating = true;
-        translateButton.setEnabled(false);
-        statusText.setText("وێنەکان دەگەڕێم بۆ دەق…");
-        webView.evaluateJavascript("(()=>{let l=document.getElementById('panel-sorani-overlay-layer');if(l)l.remove();window.__panelOverlays=[];})()", null);
-        String scan = "(()=>{let n=0;return Array.from(document.images).filter(i=>i.complete&&i.naturalWidth>140&&i.naturalHeight>70&&i.getBoundingClientRect().width>45).slice(0," + MAX_IMAGES + ").map(i=>{if(!i.dataset.panelBrowserId)i.dataset.panelBrowserId='panel-'+(++n)+'-'+Math.random().toString(36).slice(2,7);let r=i.getBoundingClientRect();return {id:i.dataset.panelBrowserId,src:i.currentSrc||i.src,left:r.left,top:r.top,width:r.width,height:r.height,naturalWidth:i.naturalWidth,naturalHeight:i.naturalHeight}})})()";
-        webView.evaluateJavascript(scan, raw -> {
-            try {
-                JSONArray images = new JSONArray(raw == null || "null".equals(raw) ? "[]" : raw);
-                if (images.length() == 0) { finishWithMessage("لە پەڕەکەدا وێنەی مانگای گونجاو نەدۆزرایەوە"); return; }
-                ocrExecutor.execute(() -> translateImages(images));
-            } catch (Exception e) { finishWithMessage("نەتوانرا وێنەکانی پەڕەکە بخوێندرێنەوە"); }
+        pendingViewportScan = false;
+        statusText.setText("وێنەکانی شاشەکە دەخوێنمەوە…");
+        String infoScript = "(()=>{const r=[];const add=i=>{if(r.length>=" + MAX_IMAGES + ")return;const b=i.getBoundingClientRect();if(b.width<35||b.height<24||b.bottom<=0||b.top>=innerHeight||b.right<=0||b.left>=innerWidth)return;r.push({left:b.left,top:b.top,right:b.right,bottom:b.bottom});};for(const i of Array.from(document.images)){if(i.complete&&i.naturalWidth>=40)add(i);}for(const e of document.querySelectorAll('canvas'))add(e);for(const e of document.querySelectorAll('div,section,figure')){if(getComputedStyle(e).backgroundImage!=='none')add(e);}return {width:innerWidth,height:innerHeight,images:r};})()";
+        webView.evaluateJavascript("(()=>{let l=document.getElementById('panel-sorani-overlay-layer');if(l)l.remove();})()", removed ->
+                webView.evaluateJavascript(infoScript, raw -> {
+                    try {
+                        JSONObject info = new JSONObject(raw == null ? "{}" : raw);
+                        JSONArray images = info.optJSONArray("images");
+                        if (images == null || images.length() == 0) { finishViewportScan("ئەم بەشەی پەڕە وێنەی لۆدکراوی تێدا نییە"); return; }
+                        webView.post(() -> {
+                            try {
+                                int width = webView.getWidth(), height = webView.getHeight();
+                                if (width < 2 || height < 2) { finishViewportScan("شاشە ئامادە نییە"); return; }
+                                Bitmap screenshot = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+                                webView.draw(new Canvas(screenshot));
+                                ocrExecutor.execute(() -> translateViewportScreenshot(screenshot, images, info.optDouble("width", width), info.optDouble("height", height)));
+                            } catch (Exception e) { finishViewportScan("نەتوانرا وێنەی شاشەکە پشکنرێت"); }
+                        });
+                    } catch (Exception e) { finishViewportScan("نەتوانرا وێنەکانی شاشەکە بناسرێن"); }
+                }));
+    }
+
+    private void translateViewportScreenshot(Bitmap screenshot, JSONArray imageRects, double cssWidth, double cssHeight) {
+        try {
+            float scaleX = screenshot.getWidth() / (float) Math.max(1, cssWidth);
+            float scaleY = screenshot.getHeight() / (float) Math.max(1, cssHeight);
+            InputImage input = InputImage.fromBitmap(screenshot, 0);
+            Text latin = null, korean = null;
+            try { latin = Tasks.await(latinRecognizer.process(input), 25, TimeUnit.SECONDS); } catch (Exception ignored) { }
+            try { korean = Tasks.await(koreanRecognizer.process(input), 30, TimeUnit.SECONDS); } catch (Exception ignored) { }
+            Text recognized = containsHangul(korean == null ? "" : korean.getText()) ? korean : latin;
+            if (recognized == null) { screenshot.recycle(); finishViewportScan("دەقێکی خوێندراوە لە وێنەکاندا نەدۆزرایەوە"); return; }
+
+            ArrayList<ViewportTranslation> pending = new ArrayList<>();
+            Set<String> unique = new HashSet<>();
+            for (Text.TextBlock block : recognized.getTextBlocks()) {
+                if (pending.size() >= MAX_TEXT_BLOCKS) break;
+                Rect box = block.getBoundingBox();
+                String source = block.getText() == null ? "" : block.getText().trim();
+                if (box == null || source.length() < 2 || !unique.add(source)) continue;
+                double cx = box.exactCenterX() / scaleX, cy = box.exactCenterY() / scaleY;
+                boolean overImage = false;
+                for (int i = 0; i < imageRects.length(); i++) {
+                    JSONObject image = imageRects.optJSONObject(i); if (image == null) continue;
+                    if (cx >= image.optDouble("left") && cx <= image.optDouble("right") && cy >= image.optDouble("top") && cy <= image.optDouble("bottom")) { overImage = true; break; }
+                }
+                if (!overImage) continue;
+                Future<String> translated = translationExecutor.submit(() -> translateSorani(source));
+                pending.add(new ViewportTranslation(box.left / scaleX, box.top / scaleY, box.width() / scaleX, box.height() / scaleY, translated));
+            }
+            screenshot.recycle();
+            if (pending.isEmpty()) { finishViewportScan("دەقی قسە لە وێنەی دەرکەوتوو نەدۆزرایەوە"); return; }
+
+            JSONArray overlays = new JSONArray();
+            for (ViewportTranslation item : pending) {
+                try {
+                    String translated = item.translation.get(20, TimeUnit.SECONDS);
+                    if (translated == null || translated.trim().isEmpty()) continue;
+                    JSONObject overlay = new JSONObject();
+                    overlay.put("x", item.x); overlay.put("y", item.y); overlay.put("w", item.width); overlay.put("h", item.height); overlay.put("text", translated.trim());
+                    overlays.put(overlay);
+                } catch (Exception ignored) { }
+            }
+            if (overlays.length() == 0) { finishViewportScan("OCR دەقەکەی دۆزییەوە، بەڵام وەرگێڕان وەڵامی نەدا"); return; }
+            String payload = JSONObject.quote(overlays.toString());
+            String script = "(()=>{try{let l=document.createElement('div');l.id='panel-sorani-overlay-layer';Object.assign(l.style,{position:'fixed',inset:'0',zIndex:'2147483647',pointerEvents:'none'});document.documentElement.appendChild(l);window.__panelSetVisible=(v)=>{for(const e of l.querySelectorAll('.panel-translation'))e.style.display=v?'flex':'none';};const a=JSON.parse(" + payload + ");for(const q of a){const b=document.createElement('button');b.className='panel-translation';b.type='button';b.textContent=q.text;Object.assign(b.style,{position:'fixed',left:Math.max(2,Math.min(q.x,innerWidth-80))+'px',top:Math.max(2,Math.min(q.y,innerHeight-36))+'px',width:Math.max(76,Math.min(q.w+18,innerWidth-8))+'px',minHeight:Math.max(36,Math.min(q.h+12,innerHeight))+'px',boxSizing:'border-box',display:'flex',alignItems:'center',justifyContent:'center',padding:'5px 9px',border:'1px solid rgba(30,20,40,.17)',borderRadius:'24px',background:'rgba(255,255,255,.97)',color:'#17131f',boxShadow:'0 2px 10px rgba(0,0,0,.3)',font:'600 14px/1.35 Noto Naskh Arabic,Noto Sans Arabic,sans-serif',direction:'rtl',textAlign:'center',whiteSpace:'normal',pointerEvents:'auto',cursor:'pointer'});b.addEventListener('click',()=>{b.style.opacity=b.style.opacity==='0'?'1':'0'});l.appendChild(b);}const c=document.createElement('button');c.textContent='سۆرانی ✓';Object.assign(c.style,{position:'fixed',right:'12px',bottom:'12px',zIndex:'2147483647',border:'1px solid #9c87ce',borderRadius:'18px',padding:'8px 13px',background:'#211b2d',color:'#efe8ff',font:'600 12px sans-serif',pointerEvents:'auto'});c.addEventListener('click',()=>{const hidden=c.dataset.hidden==='1';c.dataset.hidden=hidden?'0':'1';c.textContent=hidden?'سۆرانی ✓':'سۆرانی';window.__panelSetVisible(hidden);});l.appendChild(c);return true;}catch(e){return false;}})()";
+            runOnUiThread(() -> {
+                if (!liveTranslationEnabled) { finishViewportScan("وەرگێڕانی لایڤ وەستا"); return; }
+                webView.evaluateJavascript(script, result -> {
+                    if (result != null && result.contains("true")) finishViewportScan(overlays.length() + " دەق لە وێنەکانی شاشە وەرگێڕان");
+                    else finishViewportScan("نەتوانرا وەرگێڕانەکان لەسەر وێنەکە دابنرێن");
+                });
+            });
+        } catch (Exception e) { screenshot.recycle(); finishViewportScan("پشکنینی OCR سەرکەوتوو نەبوو"); }
+    }
+
+    private void finishViewportScan(String message) {
+        runOnUiThread(() -> {
+            translating = false;
+            statusText.setText(message);
+            if (pendingViewportScan && liveTranslationEnabled) {
+                pendingViewportScan = false;
+                mainHandler.postDelayed(this::scanViewportNow, 180);
+            }
         });
     }
 
-    private void translateImages(JSONArray images) {
-        ArrayList<PendingOverlay> pending = new ArrayList<>();
-        int imageCount = images.length();
-        for (int i = 0; i < imageCount; i++) {
-            if (pending.size() >= MAX_TEXT_BLOCKS) break;
-            final int progress = i + 1;
-            runOnUiThread(() -> statusText.setText("OCRی پانێڵ " + progress + " لە " + imageCount + "…"));
-            try {
-                JSONObject image = images.getJSONObject(i);
-                Bitmap bitmap = downloadBitmap(image.getString("src"));
-                if (bitmap == null) continue;
-                InputImage input = InputImage.fromBitmap(bitmap, 0);
-                Text latin = null, korean = null;
-                try { latin = Tasks.await(latinRecognizer.process(input), 30, TimeUnit.SECONDS); } catch (Exception ignored) { }
-                try { korean = Tasks.await(koreanRecognizer.process(input), 35, TimeUnit.SECONDS); } catch (Exception ignored) { }
-                Text chosen = containsHangul(korean == null ? "" : korean.getText()) ? korean : latin;
-                if (chosen != null) {
-                    for (Text.TextBlock block : chosen.getTextBlocks()) {
-                        if (pending.size() >= MAX_TEXT_BLOCKS) break;
-                        Rect box = block.getBoundingBox();
-                        String source = block.getText() == null ? "" : block.getText().trim();
-                        if (box == null || source.length() < 2) continue;
-                        Future<String> translated = translationExecutor.submit(() -> translateSorani(source));
-                        pending.add(new PendingOverlay(image.getString("id"),
-                                box.left / (float) bitmap.getWidth(), box.top / (float) bitmap.getHeight(),
-                                box.width() / (float) bitmap.getWidth(), box.height() / (float) bitmap.getHeight(), translated));
-                    }
-                }
-                bitmap.recycle();
-            } catch (Exception ignored) { }
+    private static class ViewportTranslation {
+        final double x, y, width, height;
+        final Future<String> translation;
+        ViewportTranslation(double x, double y, double width, double height, Future<String> translation) {
+            this.x = x; this.y = y; this.width = width; this.height = height; this.translation = translation;
         }
-        JSONArray overlays = new JSONArray();
-        for (PendingOverlay item : pending) {
-            try {
-                String translated = item.translation.get(25, TimeUnit.SECONDS);
-                if (translated == null || translated.trim().isEmpty()) continue;
-                JSONObject overlay = new JSONObject();
-                overlay.put("imageId", item.imageId); overlay.put("x", item.x); overlay.put("y", item.y);
-                overlay.put("w", item.width); overlay.put("h", item.height); overlay.put("text", translated.trim());
-                overlays.put(overlay);
-            } catch (Exception ignored) { }
-        }
-        if (overlays.length() == 0) { finishWithMessage("دەقێک نەدۆزرایەوە یان وەرگێڕان بەردەست نەبوو"); return; }
-        final String data = JSONObject.quote(overlays.toString());
-        String script = "(()=>{try{" +
-                "let layer=document.getElementById('panel-sorani-overlay-layer');" +
-                "if(!layer){layer=document.createElement('div');layer.id='panel-sorani-overlay-layer';Object.assign(layer.style,{position:'fixed',inset:'0',zIndex:'2147483647',pointerEvents:'none'});document.documentElement.appendChild(layer);}" +
-                "window.__panelOverlays=window.__panelOverlays||[];" +
-                "window.__panelReposition=()=>{for(const b of window.__panelOverlays){const im=Array.from(document.images).find(x=>x.dataset.panelBrowserId===b.dataset.imageId);if(!im){b.style.display='none';continue;}const r=im.getBoundingClientRect();b.style.left=(r.left+Number(b.dataset.x)*r.width)+'px';b.style.top=(r.top+Number(b.dataset.y)*r.height)+'px';b.style.width=Math.max(78,Number(b.dataset.w)*r.width+18)+'px';b.style.minHeight=Math.max(38,Number(b.dataset.h)*r.height+12)+'px';}};"+
-                "window.__panelSetVisible=(v)=>{layer.style.display=v?'block':'none';};"+
-                "const items=JSON.parse(" + data + ");for(const item of items){const b=document.createElement('button');b.type='button';b.textContent=item.text;b.dataset.imageId=item.imageId;b.dataset.x=item.x;b.dataset.y=item.y;b.dataset.w=item.w;b.dataset.h=item.h;Object.assign(b.style,{position:'absolute',boxSizing:'border-box',display:'flex',alignItems:'center',justifyContent:'center',padding:'6px 10px',border:'1px solid rgba(30,20,40,.16)',borderRadius:'22px',background:'rgba(255,255,255,.96)',color:'#17131f',boxShadow:'0 2px 10px rgba(0,0,0,.32)',font:'600 14px/1.35 Noto Naskh Arabic,Noto Sans Arabic,sans-serif',direction:'rtl',textAlign:'center',whiteSpace:'normal',pointerEvents:'auto',cursor:'pointer',transition:'opacity .16s'});b.addEventListener('click',()=>{b.style.opacity=b.style.opacity==='0'?'1':'0'});layer.appendChild(b);window.__panelOverlays.push(b);}window.__panelReposition();if(!window.__panelListeners){window.addEventListener('scroll',window.__panelReposition,true);window.addEventListener('resize',window.__panelReposition);window.__panelListeners=true;}window.__panelSetVisible(true);return true;}catch(e){return false;}})()";
-        runOnUiThread(() -> webView.evaluateJavascript(script, value -> {
-            translating = false; translateButton.setEnabled(true);
-            if (value != null && value.contains("true")) {
-                hasTranslations = true; translationsVisible = true; translateButton.setText("پیشان بدە / بشارەوە");
-                statusText.setText("" + overlays.length() + " دەق بە کوردیی سۆرانی وەرگێڕدرا");
-            } else statusText.setText("نەتوانرا وەرگێڕانەکان لەسەر وێنەکە دابنرێن");
-        }));
-    }
-
-    private Bitmap downloadBitmap(String address) throws Exception {
-        Uri uri = Uri.parse(address);
-        byte[] bytes;
-        if ("content".equalsIgnoreCase(uri.getScheme())) {
-            try (InputStream input = getContentResolver().openInputStream(uri)) {
-                if (input == null) return null;
-                bytes = readLimited(input);
-            }
-        } else {
-            URL url = new URL(address);
-            if (!"http".equalsIgnoreCase(url.getProtocol()) && !"https".equalsIgnoreCase(url.getProtocol())) return null;
-            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-            connection.setConnectTimeout(12000); connection.setReadTimeout(18000); connection.setInstanceFollowRedirects(true);
-            connection.setRequestProperty("User-Agent", webView.getSettings().getUserAgentString());
-            connection.setRequestProperty("Accept", "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8");
-            String cookie = CookieManager.getInstance().getCookie(address);
-            if (cookie != null) connection.setRequestProperty("Cookie", cookie);
-            String referer = webView.getUrl(); if (referer != null) connection.setRequestProperty("Referer", referer);
-            connection.connect();
-            if (connection.getResponseCode() < 200 || connection.getResponseCode() >= 300) { connection.disconnect(); return null; }
-            int length = connection.getContentLength(); if (length > MAX_IMAGE_BYTES) { connection.disconnect(); return null; }
-            try (InputStream input = connection.getInputStream()) { bytes = readLimited(input); }
-            finally { connection.disconnect(); }
-        }
-        BitmapFactory.Options bounds = new BitmapFactory.Options(); bounds.inJustDecodeBounds = true;
-        BitmapFactory.decodeByteArray(bytes, 0, bytes.length, bounds);
-        if (bounds.outWidth < 1 || bounds.outHeight < 1) return null;
-        int sample = 1; while (bounds.outWidth / sample > 2400 || bounds.outHeight / sample > 2400) sample *= 2;
-        BitmapFactory.Options options = new BitmapFactory.Options(); options.inSampleSize = sample;
-        return BitmapFactory.decodeByteArray(bytes, 0, bytes.length, options);
-    }
-
-    private byte[] readLimited(InputStream input) throws Exception {
-        ByteArrayOutputStream out = new ByteArrayOutputStream(); byte[] buffer = new byte[8192]; int read, total = 0;
-        while ((read = input.read(buffer)) != -1) { total += read; if (total > MAX_IMAGE_BYTES) throw new IllegalArgumentException("Image is too large"); out.write(buffer, 0, read); }
-        return out.toByteArray();
     }
 
     private String translateSorani(String text) {
+        String cached = translationCache.get(text);
+        if (cached != null) return cached;
         HttpURLConnection connection = null;
         try {
             String query = URLEncoder.encode(text, StandardCharsets.UTF_8.name());
             URL url = new URL("https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=ckb&dt=t&q=" + query);
             connection = (HttpURLConnection) url.openConnection();
             connection.setConnectTimeout(10000); connection.setReadTimeout(15000);
-            connection.setRequestProperty("User-Agent", "Mozilla/5.0 PanelReader/1.0");
+            connection.setRequestProperty("User-Agent", "Mozilla/5.0 PanelBrowser/1.0");
             try (InputStream input = connection.getInputStream()) {
                 ByteArrayOutputStream out = new ByteArrayOutputStream(); byte[] buf = new byte[4096]; int n;
                 while ((n = input.read(buf)) != -1) out.write(buf, 0, n);
@@ -511,24 +525,15 @@ public class MainActivity extends AppCompatActivity {
                     JSONArray chunk = chunks.optJSONArray(i);
                     if (chunk != null && chunk.optString(0) != null && !"null".equals(chunk.optString(0))) result.append(chunk.optString(0));
                 }
-                return result.toString().trim();
+                String translated = result.toString().trim();
+                if (!translated.isEmpty()) translationCache.put(text, translated);
+                return translated;
             }
         } catch (Exception e) { return null; }
         finally { if (connection != null) connection.disconnect(); }
     }
 
     private boolean containsHangul(String text) { if (text == null) return false; for (int i = 0; i < text.length(); i++) { char c = text.charAt(i); if (c >= 0xAC00 && c <= 0xD7AF) return true; } return false; }
-
-    private void finishWithMessage(String message) {
-        runOnUiThread(() -> { translating = false; translateButton.setEnabled(true); statusText.setText(message); });
-    }
-
-    private static class PendingOverlay {
-        final String imageId; final float x, y, width, height; final Future<String> translation;
-        PendingOverlay(String imageId, float x, float y, float width, float height, Future<String> translation) {
-            this.imageId = imageId; this.x = x; this.y = y; this.width = width; this.height = height; this.translation = translation;
-        }
-    }
 
     @Override protected void onDestroy() {
         super.onDestroy();
