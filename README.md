@@ -1,34 +1,25 @@
-# Panel Reader — Android & Web
+# Panel Browser — Android manhwa translator
 
-A mobile-first manhwa/webtoon reader prototype with Kurdish Sorani demo translation overlays. The web app is packaged as a Capacitor Android project (`com.panel.reader`) and also supports PWA installation.
+This project contains a real Android WebView browser (`com.panel.reader`) plus a browser-based reader demo. The APK has a URL/search bar, ordinary web navigation, page loading/progress, downloads and image upload. It is not limited to the bundled demo chapter.
 
-## Run the web app
+## Android app behavior
 
-```sh
-npm install
-npm run start
-```
+- Opens websites in an in-app browser, with back/forward, reload, home, URL/search, downloads, and image-file selection.
+- **Translate** scans loaded page images, runs on-device ML Kit OCR (Latin + Korean), then translates detected text to Kurdish Sorani (`ckb`) and overlays it at the recognized image coordinates.
+- Tap a translation badge to reveal the source; tap the toolbar translation control to show/hide all overlays. Long-press it to scan the current page again.
+- No user API key is required. OCR is local; recognized dialogue is sent to Google Translate's public web endpoint for Sorani translation, so translation needs internet access and may be rate-limited. Image hotlink restrictions and non-image/canvas-based comics may prevent OCR on some sites.
 
-Open `http://localhost:5173`. For installable PWA/offline features, use an HTTPS deployment (or localhost).
+## Build APK
 
-## Build an Android debug APK
-
-Requirements: JDK 21, Android Studio/Android SDK (Android API 36), and Android SDK Build Tools. Then run:
+Requires JDK 21 and Android SDK platform/build tools 36:
 
 ```sh
-npm install
+npm ci
 npm run android:apk
 ```
 
-The debug APK is written to `android/app/build/outputs/apk/debug/app-debug.apk`. Alternatively, run `npm run android:open` to open the project in Android Studio and build it there. `npm run android:sync` rebuilds the web assets and syncs them into the native shell.
+The debug APK is created at `android/app/build/outputs/apk/debug/app-debug.apk`. A GitHub Actions workflow builds it on pushes to the active branch and uploads the APK as an artifact. It also copies the latest requested build to `downloads/panel-reader.apk` on that branch.
 
-## Included
+## Web reader demo
 
-- Responsive reader UI and six-panel illustrated demo chapter.
-- Sorani demo dialogue badges with peek, hide, and style controls.
-- Text scaling, tone selection, reading progress, bookmarks, image upload and direct image URL loading.
-- Capacitor Android wrapper, custom launcher icon, web manifest, offline app-shell cache.
-
-## Translation integration
-
-The demo chapter uses locally authored sample dialogue. Uploaded pages and direct image URLs display in the reader, but this prototype does not run OCR or call a multimodal translation service. A server-side vision/OCR and Sorani translation endpoint is required to generate translations for user-provided images. No API key is bundled in the app.
+`index.html` remains a companion web reader demo with a six-panel sample chapter. Run it with `npm run start`.
