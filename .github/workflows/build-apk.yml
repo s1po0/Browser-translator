@@ -4,10 +4,12 @@ on:
   push:
     branches:
       - arena/e4fd7646-browser-translator
+    paths-ignore:
+      - downloads/**
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   android-debug-apk:
@@ -54,3 +56,17 @@ jobs:
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
+
+      # Keep a copy on the active session branch so it can be downloaded directly
+      # in environments where GitHub Actions artifact storage is inaccessible.
+      - name: Publish APK to branch
+        run: |
+          mkdir -p downloads
+          cp android/app/build/outputs/apk/debug/app-debug.apk downloads/panel-reader.apk
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add downloads/panel-reader.apk
+          if ! git diff --cached --quiet; then
+            git commit -m "Publish generated Panel Reader APK [skip ci]"
+            git push origin HEAD:${GITHUB_REF_NAME}
+          fi
