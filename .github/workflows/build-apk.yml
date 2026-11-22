@@ -6,6 +6,7 @@ on:
       - arena/e4fd7646-browser-translator
     paths-ignore:
       - downloads/**
+      - diagnostics/**
   workflow_dispatch:
 
 permissions:
@@ -47,9 +48,18 @@ jobs:
         run: npm run android:sync
 
       - name: Build debug APK
-        run: cd android && ./gradlew --no-daemon assembleDebug
+        id: gradle
+        continue-on-error: true
+        run: |
+          set +e
+          cd android
+          ./gradlew --no-daemon --stacktrace --console=plain assembleDebug 2>&1 | tee ../gradle-build.log
+          result=${PIPESTATUS[0]}
+          echo "exit_code=$result" >> "$GITHUB_OUTPUT"
+          exit "$result"
 
       - name: Upload APK
+        if: steps.gradle.outcome == 'success'
         uses: actions/upload-artifact@v7
         with:
           name: panel-reader-debug-apk
@@ -60,6 +70,7 @@ jobs:
       # Keep a copy on the active session branch so it can be downloaded directly
       # in environments where GitHub Actions artifact storage is inaccessible.
       - name: Publish APK to branch
+        if: steps.gradle.outcome == 'success'
         run: |
           mkdir -p downloads
           cp android/app/build/outputs/apk/debug/app-debug.apk downloads/panel-reader.apk
@@ -70,3 +81,18 @@ jobs:
             git commit -m "Publish generated Panel Reader APK [skip ci]"
             git push origin HEAD:${GITHUB_REF_NAME}
           fi
+
+      - name: Save build failure diagnostics
+        if: steps.gradle.outcome == 'failure'
+        run: |
+          mkdir -p diagnostics
+          cp gradle-build.log diagnostics/gradle-build.log
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add diagnostics/gradle-build.log
+          git commit -m "Save Android build diagnostics [skip ci]"
+          git push origin HEAD:${GITHUB_REF_NAME}
+
+      - name: Mark failed build
+        if: steps.gradle.outcome == 'failure'
+        run: exit 1
