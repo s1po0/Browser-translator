@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.app.DownloadManager;
 import android.content.Context;
 import android.content.Intent;
+import android.content.ClipData;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
@@ -11,6 +12,7 @@ import android.graphics.Rect;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Environment;
+import android.provider.MediaStore;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
@@ -35,6 +37,8 @@ import android.widget.Toast;
 
 import androidx.activity.OnBackPressedCallback;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.appcompat.app.AlertDialog;
+import androidx.core.content.FileProvider;
 
 import com.google.android.gms.tasks.Tasks;
 import com.google.mlkit.vision.common.InputImage;
@@ -48,6 +52,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -62,6 +67,7 @@ import java.util.concurrent.TimeUnit;
 
 public class MainActivity extends AppCompatActivity {
     private static final int PICK_FILE = 44;
+    private static final int CAPTURE_IMAGE = 45;
     private static final int MAX_IMAGES = 18;
     private static final int MAX_TEXT_BLOCKS = 48;
     private static final int MAX_IMAGE_BYTES = 16 * 1024 * 1024;
@@ -84,6 +90,8 @@ public class MainActivity extends AppCompatActivity {
     private boolean translationsVisible = true;
     private boolean translating = false;
     private boolean standaloneImagePicker = false;
+    private boolean autoTranslateNextPage = false;
+    private Uri cameraPhotoUri;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -203,6 +211,10 @@ public class MainActivity extends AppCompatActivity {
                 addressBar.setText(url);
                 statusText.setText(view.getTitle() == null ? "ئامادەیە" : view.getTitle());
                 pageProgress.setVisibility(View.GONE);
+                if (autoTranslateNextPage) {
+                    autoTranslateNextPage = false;
+                    waitForSelectedImages(0);
+                }
             }
         });
         webView.setWebChromeClient(new WebChromeClient() {
@@ -231,7 +243,7 @@ public class MainActivity extends AppCompatActivity {
         forward.setOnClickListener(v -> { if (webView.canGoForward()) webView.goForward(); });
         reload.setOnClickListener(v -> webView.reload());
         home.setOnClickListener(v -> loadUrl("https://www.google.com"));
-        upload.setOnClickListener(v -> { Intent intent = new Intent(Intent.ACTION_GET_CONTENT); intent.setType("image/*"); intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true); standaloneImagePicker = true; startActivityForResult(Intent.createChooser(intent, "وێنەی مانگا هەڵبژێرە"), PICK_FILE); });
+        upload.setOnClickListener(v -> openImageSourcePicker());
         root.addView(controls, new LinearLayout.LayoutParams(-1, dp(57)));
         setContentView(root);
     }
@@ -290,13 +302,54 @@ public class MainActivity extends AppCompatActivity {
         } catch (Exception e) { Toast.makeText(this, "داگرتن سەرکەوتوو نەبوو", Toast.LENGTH_SHORT).show(); }
     }
 
+    private void waitForSelectedImages(int attempt) {
+        webView.evaluateJavascript("Array.from(document.images).length>0&&Array.from(document.images).every(i=>i.complete&&i.naturalWidth>0)", ready -> {
+            if ("true".equals(ready) || attempt >= 20) onTranslatePressed();
+            else webView.postDelayed(() -> waitForSelectedImages(attempt + 1), 250);
+        });
+    }
+
+    private void openImageSourcePicker() {
+        String[] choices = {"وێنە بگرە", "لە گەلەری هەڵبژێرە"};
+        new AlertDialog.Builder(this).setTitle("وەرگێڕانی مانگا").setItems(choices, (dialog, which) -> {
+            if (which == 0) captureManhwaPhoto(); else pickManhwaImages();
+        }).show();
+    }
+
+    private void pickManhwaImages() {
+        Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
+        intent.setType("image/*"); intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+        standaloneImagePicker = true;
+        startActivityForResult(Intent.createChooser(intent, "وێنەی مانگا هەڵبژێرە"), PICK_FILE);
+    }
+
+    private void captureManhwaPhoto() {
+        Intent camera = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
+        if (camera.resolveActivity(getPackageManager()) == null) {
+            Toast.makeText(this, "کامێرا بەردەست نییە", Toast.LENGTH_SHORT).show(); return;
+        }
+        try {
+            File photo = new File(getCacheDir(), "panel-capture-" + System.currentTimeMillis() + ".jpg");
+            cameraPhotoUri = FileProvider.getUriForFile(this, getPackageName() + ".fileprovider", photo);
+            camera.putExtra(MediaStore.EXTRA_OUTPUT, cameraPhotoUri);
+            camera.setClipData(ClipData.newUri(getContentResolver(), "Manhwa photo", cameraPhotoUri));
+            camera.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+            startActivityForResult(camera, CAPTURE_IMAGE);
+        } catch (Exception e) { Toast.makeText(this, "نەتوانرا کامێرا بکرێتەوە", Toast.LENGTH_SHORT).show(); }
+    }
+
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == CAPTURE_IMAGE) {
+            if (resultCode == RESULT_OK && cameraPhotoUri != null) {
+                ArrayList<Uri> photos = new ArrayList<>(); photos.add(cameraPhotoUri); showImagePages(photos);
+            } else statusText.setText("وێنە نەگیرا");
+            cameraPhotoUri = null; return;
+        }
         if (requestCode != PICK_FILE) return;
         if (fileCallback != null) {
             Uri[] result = WebChromeClient.FileChooserParams.parseResult(resultCode, data);
-            fileCallback.onReceiveValue(result); fileCallback = null;
-            return;
+            fileCallback.onReceiveValue(result); fileCallback = null; return;
         }
         if (!standaloneImagePicker) return;
         standaloneImagePicker = false;
@@ -305,16 +358,19 @@ public class MainActivity extends AppCompatActivity {
         if (data.getClipData() != null) {
             for (int i = 0; i < data.getClipData().getItemCount(); i++) images.add(data.getClipData().getItemAt(i).getUri());
         } else if (data.getData() != null) images.add(data.getData());
-        if (images.isEmpty()) return;
+        if (!images.isEmpty()) showImagePages(images);
+    }
+
+    private void showImagePages(ArrayList<Uri> images) {
         StringBuilder html = new StringBuilder("<!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'><style>body{margin:0;background:#0d0d10}.page{padding:4px 0}.page img{display:block;width:100%;height:auto;margin:0 auto 4px}.n{color:#aaa;font:12px sans-serif;padding:8px}</style></head><body>");
         for (int i = 0; i < images.size(); i++) {
             Uri image = images.get(i);
-            try { getContentResolver().takePersistableUriPermission(image, Intent.FLAG_GRANT_READ_URI_PERMISSION); } catch (Exception ignored) { }
             html.append("<div class='page'><div class='n'>").append(i + 1).append(" / ").append(images.size()).append("</div><img src='")
                     .append(android.text.TextUtils.htmlEncode(image.toString())).append("' alt='Manhwa page ").append(i + 1).append("'></div>");
         }
         html.append("</body></html>");
         addressBar.setText("وێنەکانی هەڵبژێردراو");
+        autoTranslateNextPage = true;
         webView.loadDataWithBaseURL("https://panel.local/", html.toString(), "text/html", "UTF-8", null);
     }
 

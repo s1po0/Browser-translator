@@ -6,6 +6,7 @@ This project contains a real Android WebView browser (`com.panel.reader`) plus a
 
 - Opens websites in an in-app browser, with back/forward, reload, home, URL/search, downloads, and image-file selection.
 - **Translate** scans up to 18 loaded page images, runs on-device ML Kit OCR (Latin + Korean), then translates detected text to Kurdish Sorani (`ckb`) and overlays it at the recognized image coordinates. Scroll to load more pages and long-press Translate to rescan.
+- The plus button can open the camera or gallery. Photos/selected images are OCRed and translated automatically, avoiding comic-site image hotlink restrictions.
 - Tap a translation badge to reveal the source; tap the toolbar translation control to show/hide all overlays. Long-press it to scan the current page again.
 - No user API key is required. OCR is local; recognized dialogue is sent to Google Translate's public web endpoint for Sorani translation, so translation needs internet access and may be rate-limited. Image hotlink restrictions and non-image/canvas-based comics may prevent OCR on some sites.
 
